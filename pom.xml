@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) Piotr Morgwai Kotarbinski
+-->
+<project
+		xmlns="http://maven.apache.org/POM/4.0.0"
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+			http://maven.apache.org/maven-v4_0_0.xsd"
+	>
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>pl.morgwai.base</groupId>
+	<artifactId>grpc-utils</artifactId>
+	<version>1.0-SNAPSHOT</version>
+
+	<name>gRPC utils</name>
+	<description>gRPC utils</description>
+	<url>https://github.com/morgwai/grpc-utils</url>
+
+	<licenses>
+		<license>
+			<name>Apache License, Version 2.0</name>
+			<url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+	<scm>
+		<url>https://github.com/morgwai/grpc-utils.git</url>
+		<connection>scm:git:https://github.com/morgwai/grpc-utils.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/morgwai/grpc-utils.git</developerConnection>
+	</scm>
+	<developers>
+		<developer>
+			<id>morgwai</id>
+			<name>Piotr Morgwai Kotarbinski</name>
+			<email>foss@morgwai.pl</email>
+			<url>http://morgwai.pl/</url>
+		</developer>
+	</developers>
+
+	<properties>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<grpc.version>1.36.1</grpc.version>
+		<protobuf.version>3.12.0</protobuf.version>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>io.grpc</groupId>
+				<artifactId>grpc-bom</artifactId>
+				<version>${grpc.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+		<dependency>
+			<groupId>io.grpc</groupId>
+			<artifactId>grpc-stub</artifactId>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<version>3.2.1</version>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>3.2.0</version>
+				<configuration>
+					<javadocExecutable>${java.home}/bin/javadoc</javadocExecutable>
+				</configuration>
+				<executions>
+					<execution>
+						<id>attach-javadocs</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>
