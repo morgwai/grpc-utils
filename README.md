@@ -16,6 +16,11 @@ Buffers messages until all of those that should be written before to the output 
 (This class comes from [java-utils git submodule](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/utils/OrderedConcurrentOutputBuffer.java))
 
 
+### [BlockingResponseObserver](src/main/java/pl/morgwai/base/grpc/utils/BlockingResponseObserver.java)
+
+A response observer for a client side that blocks until response is completed with either `onCompleted()` or `onError(error)`.
+
+
 ## EXAMPLES
 
 See [sample app for grpc-scopes lib](https://github.com/morgwai/grpc-scopes/tree/master/sample)
