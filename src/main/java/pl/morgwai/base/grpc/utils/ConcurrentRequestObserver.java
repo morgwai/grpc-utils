@@ -84,8 +84,8 @@ public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * Creates an observer and enables manual flow control to maintain the desired concurrency
 	 * level while also preventing excessive buffering of response messages.
 	 */
-	public ConcurrentRequestObserver(StreamObserver<ResponseT> basicResponseObserver) {
-		responseObserver = (ServerCallStreamObserver<ResponseT>) basicResponseObserver;
+	public ConcurrentRequestObserver(ServerCallStreamObserver<ResponseT> responseObserver) {
+		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
 		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
 	}
