@@ -14,8 +14,8 @@ import io.grpc.stub.ServerCallStreamObserver;
 
 /**
  * Handles server streaming calls that need to dispatch CPU-intensive response producing to an
- * external executor. Calling {@link #handle()} will eventually have the same effects as if the
- * below code was dispatched to {@link #cpuIntensiveOpExecutor}:
+ * external executor. Calling {@link #handle()} will eventually have similar effects as if
+ * the below code was dispatched to {@link #cpuIntensiveOpExecutor}:
  * <pre>
  *try {
  *    while ( ! completionIndicator.call())
@@ -35,28 +35,47 @@ import io.grpc.stub.ServerCallStreamObserver;
  * </pre>
  * However, the work is automatically suspended/resumed whenever {@link #responseObserver} becomes
  * unready/ready <b>without</b> blocking executor's thread.<br/>
- * If a client cancels a call, {@link #exceptionHandler} will <b>not</b> be called:
+ * Furthermore, if a client cancels a call, {@link #exceptionHandler} will <b>not</b> be called:
  * {@link ServerCallStreamObserver#setOnCancelHandler(Runnable)} should be used instead
- * ({@link #cleanupHandler} will be called regardless).
+ * ({@link #cleanupHandler} will be called regardless).<br/>
+ * <br/>
+ * Typical usage:
+ * <pre>
+ *public void myServerStreamingMethod(
+ *        RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+ *    var state = new MyCallState(request);
+ *    var responseObserver =
+ *            (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
+ *    responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
+ *    new CpuIntensiveServerStreamingCallHandler&lt;ResponseMessage&gt;(
+ *        responseObserver,
+ *        cpuIntensiveOpExecutor,
+ *        () -&gt; state.isCompleted(),
+ *        () -&gt; state.produceNextResponseMessage(),
+ *        (Throwable t) -&gt; { log.log(Level.SEVERE, "exception", t); return null; },
+ *        () -&gt; state.cleanup()
+ *    ).handle();
+ *}
+ * </pre>
  */
-public class CpuIntensiveServerStreamingCallHandler<RequestT, ResponseT> {
+public class CpuIntensiveServerStreamingCallHandler<ResponseT> {
 
 
 
 	ServerCallStreamObserver<ResponseT> responseObserver;
 	Executor cpuIntensiveOpExecutor;
 	Callable<Boolean> completionIndicator;
+	Callable<ResponseT> responseProducer;
 	Function<Throwable, Void> exceptionHandler;
 	Runnable cleanupHandler;
-	Callable<ResponseT> responseProducer;
 
 	boolean processingInProgress = false;
 
 
 
 	/**
-	 * Sets <code>onReadyHandler</code> which results in call to be handled after a given user RPC
-	 * method exits.
+	 * Sets <code>onReadyHandler</code> which results in the call to be handled after a given user
+	 * RPC method exits.
 	 */
 	public void handle() {
 		responseObserver.setOnReadyHandler(() -> {
@@ -69,7 +88,11 @@ public class CpuIntensiveServerStreamingCallHandler<RequestT, ResponseT> {
 	}
 
 	/**
-	 * Handles 1 cycle of {@link #responseObserver}'s readiness.
+	 * Handles 1+ cycle of {@link #responseObserver}'s readiness.
+	 * It may happen that {@link #responseObserver} will change its state from unready to ready very
+	 * fast, before it can be even noticed that it was unready, in which case the below handler will
+	 * span over more than 1 cycle. {@link #processingInProgress} flag prevents {@link #handle()} to
+	 * spawn another handler in such case.
 	 */
 	Runnable handler = () -> {
 		try {
@@ -109,15 +132,15 @@ public class CpuIntensiveServerStreamingCallHandler<RequestT, ResponseT> {
 		ServerCallStreamObserver<ResponseT> responseObserver,
 		Executor cpuIntensiveOpExecutor,
 		Callable<Boolean> completionIndicator,
+		Callable<ResponseT> responseProducer,
 		Function<Throwable, Void> exceptionHandler,
-		Runnable cleanupHandler,
-		Callable<ResponseT> responseProducer
+		Runnable cleanupHandler
 	) {
 		this.responseObserver = responseObserver;
 		this.cpuIntensiveOpExecutor = cpuIntensiveOpExecutor;
 		this.completionIndicator = completionIndicator;
+		this.responseProducer = responseProducer;
 		this.exceptionHandler = exceptionHandler;
 		this.cleanupHandler = cleanupHandler;
-		this.responseProducer = responseProducer;
 	}
 }
