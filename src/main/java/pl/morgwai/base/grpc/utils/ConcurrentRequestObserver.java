@@ -76,7 +76,8 @@ public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * (assuming server's output buffer is not too full).
 	 */
 	protected abstract void onRequest(
-			RequestT requestMessage, StreamObserver<ResponseT> responseObserver);
+			RequestT requestMessage,
+			StreamObserver<ResponseT> singleRequestMessageResponseObserver);
 
 
 
@@ -121,7 +122,7 @@ public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	@Override
 	public void onNext(RequestT request) {
-		onRequest(request, new OneRequestMessageResponseObserver(request));
+		onRequest(request, new SingleRequestMessageResponseObserver(request));
 	}
 
 
@@ -129,13 +130,13 @@ public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
 	/**
 	 * Observer of responses to 1 particular request message.
 	 */
-	class OneRequestMessageResponseObserver implements StreamObserver<ResponseT> {
+	class SingleRequestMessageResponseObserver implements StreamObserver<ResponseT> {
 
 		RequestT request;
 
 
 
-		OneRequestMessageResponseObserver(RequestT request) {
+		SingleRequestMessageResponseObserver(RequestT request) {
 			this.request = request;
 			synchronized (ConcurrentRequestObserver.this) {
 				ongoingRequests.add(request);

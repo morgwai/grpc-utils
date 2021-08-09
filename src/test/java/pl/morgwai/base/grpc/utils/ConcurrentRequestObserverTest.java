@@ -1,14 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.util.Comparator;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -26,6 +19,8 @@ import io.grpc.stub.StreamObserver;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import static org.junit.Assert.*;
 
 
 
@@ -53,7 +48,8 @@ public class ConcurrentRequestObserverTest {
 		 */
 		public interface MessageHandler {
 			void onRequest(
-				RequestMessage requestMessage, StreamObserver<ResponseMessage> responseObserver);
+				RequestMessage requestMessage,
+				StreamObserver<ResponseMessage> singleRequestMessageResponseObserver);
 		}
 
 		MessageHandler messageHandler;
@@ -67,9 +63,10 @@ public class ConcurrentRequestObserverTest {
 
 		@Override
 		protected void onRequest(
-				RequestMessage requestMessage, StreamObserver<ResponseMessage> responseObserver) {
+				RequestMessage requestMessage,
+				StreamObserver<ResponseMessage> singleRequestMessageResponseObserver) {
 			if (log.isLoggable(Level.FINEST)) log.finest("request received: " + requestMessage);
-			messageHandler.onRequest(requestMessage, responseObserver);
+			messageHandler.onRequest(requestMessage, singleRequestMessageResponseObserver);
 		}
 
 		@Override
@@ -80,213 +77,112 @@ public class ConcurrentRequestObserverTest {
 
 
 
+	FakeResponseObserver<ResponseMessage> responseObserver;
+
 	/**
-	 * Called by {@link #responseObserver}'s {@link FakeResponseObserver#request(int) request(int)}.
-	 * Should usually call {@link #requestObserver}'s <code>onNext(newMsg)</code> or
-	 * <code>onCompleted</code> to simulate a client delivering request messages.<br/>
-	 * Created in test methods to simulate specific client behavior. Synchronous tests usually
-	 * create it using  {@link #newSynchronousMessageProducer(int)}.
+	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
+	 * observer as ready, etc.
 	 */
-	Runnable nextMessageRequestedHandler;
+	ExecutorService grpcInternalExecutor;
+
+	/**
+	 * This lock ensures that user's request observer will be called by at most 1 thread
+	 * concurrently, just as gRPC listener does. It is exposed for cases when user code simulates
+	 * gRPC listener behavior, usually when triggering a test.
+	 */
+	Object listenerLock;
+
+
+
 
 	AtomicInteger requestIdSequence;
 
-	Runnable newSynchronousMessageProducer(int numberOfMessages) {
-		boolean[] completedHolder = {false};
+	Runnable newMessageProducer(int numberOfRequests, long maxDelayMillis) {
+		int[] deliveredCountHolder = {0};
 		return () -> {
-			if (requestIdSequence.get() < numberOfMessages) {
-				requestObserver.onNext(new RequestMessage(requestIdSequence.incrementAndGet()));
-			} else if ( ! completedHolder[0]) {
-				completedHolder[0] = true;
-				requestObserver.onCompleted();
+			int requestId = requestIdSequence.incrementAndGet();
+			if (requestId > numberOfRequests) return;
+
+			// deliver the next message asynchronously immediately or after a slight delay
+			if (maxDelayMillis > 0) {
+				try {
+					Thread.sleep(requestId % (maxDelayMillis + 1));
+				} catch (InterruptedException e) {}
+			}
+
+			synchronized (listenerLock) {
+				requestObserver.onNext(new RequestMessage(requestId));
+			}
+
+			boolean allDelivered;
+			synchronized (deliveredCountHolder) {
+				allDelivered = (++deliveredCountHolder[0] == numberOfRequests);
+			}
+			if (allDelivered) {
+				synchronized (listenerLock) {
+					requestObserver.onCompleted();
+				}
 			}
 		};
 	}
 
-
-
-	FakeResponseObserver responseObserver;
-
-	class FakeResponseObserver extends ServerCallStreamObserver<ResponseMessage> {
-
-
-
-		/**
-		 * Stores argument of {@link #onNext(ResponseMessage)}.
-		 */
-		List<ResponseMessage> outputData = new LinkedList<>();
-
-		/**
-		 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
-		 * submitted to it. <code>0</code> means always ready.
-		 */
-		int outputBufferSize = 0;
-
-		/**
-		 * Duration for which observer will be unready.
-		 */
-		long unreadyDurationMillis;
-
-		volatile boolean ready = true;
-		Runnable onReadyHandler;
-
-		@Override
-		public void onNext(ResponseMessage message) {
-			if (log.isLoggable(Level.FINEST)) log.finest("response sent: " + message);
-			outputData.add(message);
-
-			// mark observer unready every outputBufferSize messages
-			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
-				log.finer("response observer unready");
-				ready = false;
-
-				// schedule to become ready again after clientProcessingDelayMillis ms
-				executor.execute(() -> {
-					try {
-						Thread.sleep(unreadyDurationMillis);
-					} catch (InterruptedException e) {}
-					synchronized (requestObserver) {
-						if ( ! ready) {
-							log.finer("response observer ready");
-							ready = true;
-							onReadyHandler.run();
-						}
-					}
-				});
-			}
-		}
-
-		@Override
-		public boolean isReady() {
-			return ready;
-		}
-
-		@Override
-		public void setOnReadyHandler(Runnable onReadyHandler) {
-			this.onReadyHandler = onReadyHandler;
-		}
-
-
-
-		/**
-		 * Counts {@link #onCompleted()} calls. Should be 1 at the end of positive test methods.
-		 */
-		int completedCount = 0;
-
-		/**
-		 * Stores argument of {@link #onError(Throwable)}.
-		 */
-		Throwable reportedError;
-
-		Object lock = new Object();
-
-		@Override
-		public void onError(Throwable t) {
-			if (log.isLoggable(Level.FINER)) log.finer("error reported: " + t);
-			synchronized (lock) {
-				if (reportedError != null) fail("onError called twice");
-				reportedError = t;
-				lock.notify();
-			}
-		}
-
-		@Override
-		public void onCompleted() {
-			log.finer("response completed");
-			synchronized (lock) {
-				completedCount++;
-				lock.notify();
-			}
-		}
-
-		public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-			synchronized (lock) {
-				if (completedCount == 0 && reportedError == null) lock.wait(timeoutMillis);
-			}
-		}
-
-
-
-		boolean autoRequestDisabled = false;
-
-		@Override
-		public void request(int count) {
-			if ( ! autoRequestDisabled) fail("autoRequest was not disabled");
-			if (nextMessageRequestedHandler != null) {
-				for (int i = 0; i < count; i++) nextMessageRequestedHandler.run();
-			}
-		}
-
-		@Override
-		public void disableAutoRequest() {
-			this.autoRequestDisabled = true;
-		}
-
-
-
-		@Override public void disableAutoInboundFlowControl() { fail(UNEXPECTED_CALL); }
-		@Override public void setCompression(String compression) { fail(UNEXPECTED_CALL); }
-		@Override public void setMessageCompression(boolean enable) { fail(UNEXPECTED_CALL); }
-		@Override public void setOnCancelHandler(Runnable onCancelHandler) { fail(UNEXPECTED_CALL);}
-		@Override public boolean isCancelled() { fail(UNEXPECTED_CALL); return false; }
-		static final String UNEXPECTED_CALL = "unexpected call";
-	}
-
-
-
-	/**
-	 * Executor for async tasks, such as delivering a next message, handling a message, marking
-	 * response observer as ready, etc.
-	 */
-	ExecutorService executor;
-
-
-
-	@Test
-	public void testSynchronousDeliveryResponseObserverAlwaysReady() throws InterruptedException {
-		nextMessageRequestedHandler = newSynchronousMessageProducer(10);
-		requestObserver = new NoErrorConcurrentRequestObserver(
-			responseObserver,
-			(requestMessage, responseObserver) -> {
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-				responseObserver.onCompleted();
-			}
-		);
-
-		responseObserver.request(1);  // runs the test, everything happens in 1 thread
-		responseObserver.awaitFinalization(10_000l);
-
-		assertEquals("all messages should be written",
-				requestIdSequence.get(), responseObserver.outputData.size());
-		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.completedCount);
+	Runnable newMessageProducer(int numberOfRequests) {
+		return newMessageProducer(numberOfRequests, 0);
 	}
 
 
 
 	@Test
-	public void testSynchronousDeliveryResponseObserverNotReadyOnce() throws InterruptedException {
-		responseObserver.outputBufferSize = 6;
-		responseObserver.unreadyDurationMillis = 3;
-		nextMessageRequestedHandler = newSynchronousMessageProducer(10);
+	public void testSynchronousProcessingResponseObserverAlwaysReady() throws InterruptedException {
+		int numberOfRequests = 10;
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(numberOfRequests));
 		requestObserver = new NoErrorConcurrentRequestObserver(
 			responseObserver,
-			(requestMessage, responseObserver) -> {
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-				responseObserver.onCompleted();
+			(requestMessage, singleRequestMessageResponseObserver) -> {
+				singleRequestMessageResponseObserver.onNext(new ResponseMessage(requestMessage.id));
+				singleRequestMessageResponseObserver.onCompleted();
 			}
 		);
 
-		responseObserver.request(1);  // runs the test
+		synchronized (listenerLock) {
+			responseObserver.request(1);  // runs the test, everything happens in 1 thread
+		}
 		responseObserver.awaitFinalization(10_000l);
-		executor.shutdown();
-		executor.awaitTermination(20, TimeUnit.MILLISECONDS);
 
-		assertTrue("executor should shutdown cleanly", executor.isTerminated());
 		assertEquals("all messages should be written",
-				requestIdSequence.get(), responseObserver.outputData.size());
+				numberOfRequests, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.completedCount);
+				1, responseObserver.getFinalizedCount());
+	}
+
+
+
+	@Test
+	public void testSynchronousProcessingResponseObserverUnreadyOnce() throws InterruptedException {
+		int numberOfRequests = 10;
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(numberOfRequests));
+		responseObserver.setOutputBufferSize(6);
+		responseObserver.setUnreadyDuration(3);
+		requestObserver = new NoErrorConcurrentRequestObserver(
+			responseObserver,
+			(requestMessage, singleRequestMessageResponseObserver) -> {
+				singleRequestMessageResponseObserver.onNext(new ResponseMessage(requestMessage.id));
+				singleRequestMessageResponseObserver.onCompleted();
+			}
+		);
+
+		synchronized (listenerLock) {
+			responseObserver.request(1);  // runs the test
+		}
+		responseObserver.awaitFinalization(10_000l);
+		grpcInternalExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(20, TimeUnit.MILLISECONDS);
+
+		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
+		assertEquals("all messages should be written",
+				numberOfRequests, responseObserver.getOutputData().size());
+		assertEquals("response should be marked completed 1 time",
+				1, responseObserver.getFinalizedCount());
 	}
 
 
@@ -295,162 +191,178 @@ public class ConcurrentRequestObserverTest {
 	public void testOnError() throws InterruptedException {
 		int[] deliveredCountHolder = {0};
 		Exception error = new Exception();
-		nextMessageRequestedHandler = newSynchronousMessageProducer(2);
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(2));
 		requestObserver = new NoErrorConcurrentRequestObserver(
 			responseObserver,
-			(requestMessage, responseObserver) -> {
+			(requestMessage, singleRequestMessageResponseObserver) -> {
 				if (++deliveredCountHolder[0] > 1) {
 					fail("no messages should be requested after error");
 				}
-				responseObserver.onError(error);
+				singleRequestMessageResponseObserver.onError(error);
 			}
 		);
 
-		responseObserver.request(1);
+		synchronized (listenerLock) {
+			responseObserver.request(1);
+		}
 		responseObserver.awaitFinalization(10_000l);
 
-		assertSame("supplied error should be reported", error, responseObserver.reportedError);
+		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
 	}
 
 
 
 	@Test
-	public void testOnNextAfterOnCompleted() {
-		nextMessageRequestedHandler = newSynchronousMessageProducer(2);
+	public void testOnNextAfterOnCompleted() throws InterruptedException {
+		boolean[] resultHolder = { false };
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(2));
 		requestObserver = new NoErrorConcurrentRequestObserver(
 			responseObserver,
-			(requestMessage, responseObserver) -> {
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-				responseObserver.onCompleted();
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-			}
-		);
-
-		try {
-			responseObserver.request(1);
-			fail("IllegalStateException should be thrown");
-		} catch (IllegalStateException e) {}
-	}
-
-
-
-	@Test
-	public void testOnCompletedTwice() {
-		nextMessageRequestedHandler = newSynchronousMessageProducer(2);
-		requestObserver = new NoErrorConcurrentRequestObserver(
-			responseObserver,
-			(requestMessage, responseObserver) -> {
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-				responseObserver.onCompleted();
-				responseObserver.onCompleted();
-			}
-		);
-
-		try {
-			responseObserver.request(1);
-			fail("IllegalStateException should be thrown");
-		} catch (IllegalStateException e) {}
-	}
-
-
-
-	@Test
-	public void testOnErrorAfterOnCompleted() {
-		nextMessageRequestedHandler = newSynchronousMessageProducer(2);
-		requestObserver = new NoErrorConcurrentRequestObserver(
-			responseObserver,
-			(requestMessage, responseObserver) -> {
-				responseObserver.onNext(new ResponseMessage(requestMessage.id));
-				responseObserver.onCompleted();
-				responseObserver.onError(new Exception());;
-			}
-		);
-
-		try {
-			responseObserver.request(1);
-			fail("IllegalStateException should be thrown");
-		} catch (IllegalStateException e) {}
-	}
-
-
-
-	@Test
-	public void test100AsyncRequests() throws InterruptedException {
-		responseObserver.outputBufferSize = 13;
-		responseObserver.unreadyDurationMillis = 5;
-		testAsyncRequests(100, 3, 5);
-	}
-
-	@Test
-	public void test100AsyncSequentialRequests() throws InterruptedException {
-		responseObserver.outputBufferSize = 7;
-		responseObserver.unreadyDurationMillis = 3;
-		testAsyncRequests(100, 1, 1);
-		assertTrue("messages should be written in order",
-				Comparators.isInStrictOrder(responseObserver.outputData, responseComparator));
-	}
-
-	void testAsyncRequests(int numberOfRequests, int responsesPerRequest, int concurrencyLevel)
-			throws InterruptedException {
-		int[] deliveredCountHolder = {0};
-
-		nextMessageRequestedHandler = () -> {
-			int requestId = requestIdSequence.incrementAndGet();
-			if (requestId > numberOfRequests) return;
-
-			// deliver the next message synchronously or asynchronously after slight delay
-			if (requestId % 3 == 0) {
-				synchronized (requestObserver) {
-					requestObserver.onNext(new RequestMessage(requestId));
-					if (++deliveredCountHolder[0] == numberOfRequests) {
-						requestObserver.onCompleted();
-					}
+			(requestMessage, singleRequestMessageResponseObserver) -> {
+				try {
+					singleRequestMessageResponseObserver.onNext(
+							new ResponseMessage(requestMessage.id));
+					singleRequestMessageResponseObserver.onCompleted();
+					singleRequestMessageResponseObserver.onNext(
+							new ResponseMessage(requestMessage.id));
+				} catch (IllegalStateException e) {
+					resultHolder[0] = true;
 				}
-			} else {
-				executor.execute(() -> {
-					try {
-						Thread.sleep(requestId % 2);
-					} catch (InterruptedException e) {}
-					synchronized (requestObserver) {
-						requestObserver.onNext(new RequestMessage(requestId));
-						if (++deliveredCountHolder[0] == numberOfRequests) {
-							requestObserver.onCompleted();
-						}
-					}
-				});
+				synchronized (resultHolder) {
+					resultHolder.notify();
+				}
 			}
-		};
+		);
 
+		synchronized (listenerLock) {
+			responseObserver.request(1);
+		}
+		synchronized (resultHolder) {
+			resultHolder.wait();
+		}
+		if ( ! resultHolder[0]) fail("IllegalStateException should be thrown");
+	}
+
+
+
+	@Test
+	public void testOnCompletedTwice() throws InterruptedException {
+		boolean[] resultHolder = { false };
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(2));
 		requestObserver = new NoErrorConcurrentRequestObserver(
 			responseObserver,
-			(requestMessage, responseObserver) -> {
+			(requestMessage, singleRequestMessageResponseObserver) -> {
+				try {
+					singleRequestMessageResponseObserver.onNext(
+							new ResponseMessage(requestMessage.id));
+					singleRequestMessageResponseObserver.onCompleted();
+					singleRequestMessageResponseObserver.onCompleted();
+				} catch (IllegalStateException e) {
+					resultHolder[0] = true;
+				}
+				synchronized (resultHolder) {
+					resultHolder.notify();
+				}
+			}
+		);
+
+		synchronized (listenerLock) {
+			responseObserver.request(1);
+		}
+		synchronized (resultHolder) {
+			resultHolder.wait();
+		}
+		if ( ! resultHolder[0]) fail("IllegalStateException should be thrown");
+	}
+
+
+
+	@Test
+	public void testOnErrorAfterOnCompleted() throws InterruptedException {
+		boolean[] resultHolder = { false };
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(2));
+		requestObserver = new NoErrorConcurrentRequestObserver(
+			responseObserver,
+			(requestMessage, singleRequestMessageResponseObserver) -> {
+				try {
+					singleRequestMessageResponseObserver.onNext(
+							new ResponseMessage(requestMessage.id));
+					singleRequestMessageResponseObserver.onCompleted();
+					singleRequestMessageResponseObserver.onError(new Exception());;
+				} catch (IllegalStateException e) {
+					resultHolder[0] = true;
+				}
+				synchronized (resultHolder) {
+					resultHolder.notify();
+				}
+			}
+		);
+
+		synchronized (listenerLock) {
+			responseObserver.request(1);
+		}
+		synchronized (resultHolder) {
+			resultHolder.wait();
+		}
+		if ( ! resultHolder[0]) fail("IllegalStateException should be thrown");
+	}
+
+
+
+	@Test
+	public void testAsyncProcessing100Requests5Threads() throws InterruptedException {
+		responseObserver.setOutputBufferSize(13);
+		responseObserver.setUnreadyDuration(5);
+		testAsyncProcessing(100, 3, 5);
+	}
+
+	@Test
+	public void testAsyncSequentialProcessing100Requests() throws InterruptedException {
+		responseObserver.setOutputBufferSize(7);
+		responseObserver.setUnreadyDuration(3);
+		testAsyncProcessing(100, 1, 1);
+		assertTrue("messages should be written in order",
+				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
+	}
+
+	void testAsyncProcessing(int numberOfRequests, int responsesPerRequest, int concurrencyLevel)
+			throws InterruptedException {
+		responseObserver.setNextMessageRequestedHandler(newMessageProducer(numberOfRequests, 5));
+		ExecutorService userExecutor = new ThreadPoolExecutor(
+				concurrencyLevel, concurrencyLevel, 0, TimeUnit.DAYS, new LinkedBlockingQueue<>());
+		requestObserver = new NoErrorConcurrentRequestObserver(
+			responseObserver,
+			(requestMessage, singleRequestMessageResponseObserver) -> {
 				final AtomicInteger responseCount = new AtomicInteger(0);
 				// produce each response asynchronously in about 1-3ms
 				for (int i = 0; i < responsesPerRequest; i++) {
-					executor.execute(() -> {
+					userExecutor.execute(() -> {
 						try {
-							// sleep time may vary 1-3ms each run depending on race conditions
+							// sleep time varies 1-3ms depending on request/response message counts
 							Thread.sleep(((requestMessage.id + responseCount.get()) % 3) + 1);
 						} catch (InterruptedException e) {}
-						responseObserver.onNext(new ResponseMessage(requestMessage.id));
+						singleRequestMessageResponseObserver.onNext(
+								new ResponseMessage(requestMessage.id));
 						if (responseCount.incrementAndGet() == responsesPerRequest) {
-							responseObserver.onCompleted();
+							singleRequestMessageResponseObserver.onCompleted();
 						}
 					});
 				}
 			}
 		);
 
-		responseObserver.request(concurrencyLevel);  // runs the test
+		synchronized (listenerLock) {
+			responseObserver.request(concurrencyLevel);  // runs the test
+		}
 		responseObserver.awaitFinalization(10_000l);
-		executor.shutdown();
-		executor.awaitTermination(20, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(20, TimeUnit.MILLISECONDS);
 
-		assertTrue("executor should shutdown cleanly", executor.isTerminated());
+		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
 		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.completedCount);
+				1, responseObserver.getFinalizedCount());
 		assertEquals("all messages should be written",
-				numberOfRequests * responsesPerRequest, responseObserver.outputData.size());
+				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 	}
 
 
@@ -490,16 +402,21 @@ public class ConcurrentRequestObserverTest {
 
 	@Before
 	public void setup() {
-		responseObserver = new FakeResponseObserver();
 		requestIdSequence = new AtomicInteger(0);
-		executor = new ThreadPoolExecutor(10, 10, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+		grpcInternalExecutor = new ThreadPoolExecutor(
+				10, 10, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
+		listenerLock = responseObserver.getListenerLock();
 	}
 
 
 
-	// change the below value if you need logging
-	// FINER will log finalizing and marking responseObserver ready/unready
-	// FINEST will additionally log every message received and sent
+	/**
+	 * Change the below value if you need logging:<br/>
+	 * <code>FINE</code> will log finalizing events.<br/>
+	 * <code>FINER</code> will log marking observer ready/unready.<br/>
+	 * <code>FINEST</code> will log every message received and sent and synchronization events
+	 */
 	static final Level LOG_LEVEL = Level.OFF;
 
 	static final Logger log =
@@ -511,5 +428,8 @@ public class ConcurrentRequestObserverTest {
 		handler.setLevel(LOG_LEVEL);
 		log.addHandler(handler);
 		log.setLevel(LOG_LEVEL);
+		var responseObserverLog = FakeResponseObserver.getLogger();
+		responseObserverLog.addHandler(handler);
+		responseObserverLog.setLevel(LOG_LEVEL);
 	}
 }
