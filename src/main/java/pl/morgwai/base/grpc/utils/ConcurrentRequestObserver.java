@@ -104,7 +104,7 @@ public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	synchronized void onResponseObserverReady() {
 		// request 1 message for every thread that refrained from doing so when buffer was too full
-		if (joblessThreadCount > 0) {
+		if (joblessThreadCount > 0 && ! halfClosed) {
 			responseObserver.request(joblessThreadCount);
 			joblessThreadCount = 0;
 		}
