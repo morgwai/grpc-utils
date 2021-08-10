@@ -25,7 +25,7 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * @param grpcInternalExecutor executor for gRPC internal tasks, such as marking response
-	 * observer as ready, etc
+	 * observer as ready, delivering requested messages etc.
 	 */
 	public FakeResponseObserver(Executor grpcInternalExecutor) {
 		this.grpcInternalExecutor = grpcInternalExecutor;
@@ -269,24 +269,24 @@ public class FakeResponseObserver<ResponseT>
 	}
 
 	/**
-	 * <code>nextMessageRequestedHandler</code> is dispatched to {@link #grpcInternalExecutor} by
+	 * {@link #messageProducer} is dispatched to {@link #grpcInternalExecutor} by
 	 * {@link #request(int)} method.<br/>
 	 * It should usually call <code>requestObserver</code>'s {@link StreamObserver#onNext(Object)}
 	 * or {@link StreamObserver#onCompleted()} to simulate a client delivering request messages.
 	 * <br/>
 	 * Lambda instances are usually created in test methods to simulate specific client behavior.
 	 */
-	public void setNextMessageRequestedHandler(Runnable nextMessageRequestedHandler) {
-		this.nextMessageRequestedHandler = nextMessageRequestedHandler;
+	public void setMessageProducer(Runnable nextMessageRequestedHandler) {
+		this.messageProducer = nextMessageRequestedHandler;
 	}
-	Runnable nextMessageRequestedHandler;
+	Runnable messageProducer;
 
 	@Override
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
-		if (nextMessageRequestedHandler != null) {
+		if (messageProducer != null) {
 			for (int i = 0; i < count; i++) {
-				grpcInternalExecutor.execute(nextMessageRequestedHandler);
+				grpcInternalExecutor.execute(messageProducer);
 			}
 		}
 	}

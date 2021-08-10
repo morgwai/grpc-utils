@@ -90,7 +90,7 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor = new ThreadPoolExecutor(
 				10, 10, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
-		responseObserver.setNextMessageRequestedHandler(messageProducer);
+		responseObserver.setMessageProducer(messageProducer);
 		listenerLock = responseObserver.getListenerLock();
 		requestObserver = new ConcurrentRequestObserver<>(
 				responseObserver,
