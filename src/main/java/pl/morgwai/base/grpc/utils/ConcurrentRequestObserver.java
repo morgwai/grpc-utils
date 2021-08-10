@@ -3,6 +3,8 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
@@ -29,25 +31,17 @@ import io.grpc.stub.StreamObserver;
  *    ServerCallStreamObserver&lt;ResponseMessage&gt; responseObserver =
  *            (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
  *
- *    var requestObserver =
- *          new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(responseObserver) {
- *
- *        /**
- *         * Produces asynchronously 1 response message for the given requestMessage.
- *         *&sol;
- *        &commat;Override
- *        protected void onRequest(
- *                RequestT requestMessage, StreamObserver&lt;ResponseMessage&gt; responseObserver) {
+ *    var requestObserver = new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
+ *        responseObserver,
+ *        (requestMessage, singleRequestMessageResponseObserver) -&gt; {
  *            executor.execute(() -&gt; {
  *                var responseMessage = process(requestMessage);
- *                responseObserver.onNext(responseMessage);
- *                responseObserver.onCompleted();
+ *                singleRequestMessageResponseObserver.onNext(responseMessage);
+ *                singleRequestMessageResponseObserver.onCompleted();
  *            });
- *        }
- *
- *        &commat;Override
- *        public void onError(Throwable t) {/* ... *&sol;}
- *    }
+ *        },
+ *        (error) -&gt; log.info(error)
+ *    );
  *
  *    responseObserver.request(10);  // 10 is the size of executor's threadPool
  *    return requestObserver;
@@ -60,43 +54,84 @@ import io.grpc.stub.StreamObserver;
  * Once response observers for all request messages are closed and the client closes his request
  * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.
  */
-public abstract class ConcurrentRequestObserver<RequestT, ResponseT>
+public class ConcurrentRequestObserver<RequestT, ResponseT>
 		implements StreamObserver<RequestT> {
 
 
 
 	/**
 	 * Produces response messages to a given <code>requestMessage</code> and submits them to the
-	 * <code>responseObserver</code> (associated with the given <code>requestMessage</code>).<br/>
+	 * {@code singleRequestMessageResponseObserver} (associated with the given
+	 * {@code requestMessage}).<br/>
 	 * Work may be freely dispatched to several other threads. Once all response messages to a
-	 * a given <code>requestMessage</code> are submitted via <code>onNext(reply)</code> method,
-	 * <code>responseObserver.onComplete()</code> must be called to signal to this
-	 * <code>ConcurrentRequestObserver</code> that no more response messages will be produced for
-	 * this <code>requestMessage</code> and that the next one may be requested from the client
-	 * (assuming server's output buffer is not too full).
+	 * a given <code>requestMessage</code> are submitted via {@code onNext(reply)} method,
+	 * <code>singleRequestMessageResponseObserver.onComplete()</code> must be called to signal to
+	 * this <code>ConcurrentRequestObserver</code> that no more response messages will be produced
+	 * for this <code>requestMessage</code> and that the next one may be requested from the client
+	 * (assuming server's output buffer is not too full).<br/>
+	 * <br/>
+	 * This implementation calls {@link #requestHandler} supplied via the param of
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
+	 * constructor.
 	 */
-	protected abstract void onRequest(
+	protected void onRequest(
 			RequestT requestMessage,
-			StreamObserver<ResponseT> singleRequestMessageResponseObserver);
+			StreamObserver<ResponseT> singleRequestMessageResponseObserver) {
+		requestHandler.accept(requestMessage, singleRequestMessageResponseObserver);
+	}
+
+	BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler;
+
+
+
+	/**
+	 * See {@link StreamObserver#onError(Throwable)} for details.
+	 * This implementation calls {@link #errorHandler} supplied via the param of
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
+	 * constructor.
+	 */
+	@Override
+	public void onError(Throwable t) {
+		errorHandler.accept(t);
+	}
+
+	Consumer<Throwable> errorHandler;
 
 
 
 	/**
 	 * Creates an observer and enables manual flow control to maintain the desired concurrency
 	 * level while also preventing excessive buffering of response messages.
+	 *
+	 * @param responseObserver
+	 * @param requestHandler lambda called by {@link #onRequest(Object, StreamObserver)}
+	 * @param errorHandler lambda called by {@link #onError(Throwable)}
 	 */
-	public ConcurrentRequestObserver(ServerCallStreamObserver<ResponseT> responseObserver) {
+	public ConcurrentRequestObserver(
+		ServerCallStreamObserver<ResponseT> responseObserver,
+		BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler,
+		Consumer<Throwable> errorHandler
+	) {
+		this(responseObserver);
+		this.requestHandler = requestHandler;
+		this.errorHandler = errorHandler;
+	}
+
+	/**
+	 * Constructor for those who prefer to override {@link #onRequest(Object, StreamObserver)} and
+	 * {@link #onError(Throwable)} in a subclass instead of providing lambdas.
+	 */
+	protected ConcurrentRequestObserver(ServerCallStreamObserver<ResponseT> responseObserver) {
 		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
 		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
 	}
 
-
-
 	ServerCallStreamObserver<ResponseT> responseObserver;
 
-	boolean halfClosed = false;
 
+
+	boolean halfClosed = false;
 	int joblessThreadCount = 0;
 	Set<RequestT> ongoingRequests = new HashSet<>();
 

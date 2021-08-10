@@ -1,6 +1,8 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.function.Consumer;
+
 import io.grpc.stub.StreamObserver;
 
 
@@ -20,7 +22,7 @@ import io.grpc.stub.StreamObserver;
  *} catch (InterruptedException e) {  // often unreachable code
  *} catch (ErrorReportedException e) {
  *    Throwable reportedError = e.getCause();
- *    // handle error reported via onError(reportedError) here...
+ *    // handle error that was reported via onError(reportedError) here...
  *}
  * </pre>
  */
@@ -28,24 +30,22 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 
-	/**
-	 * Functional interface for lambdas implementing <code>onNext(msg)</code> passed as an argument
-	 * to {@link BlockingResponseObserver#BlockingResponseObserver(ResponseHandler)}.
-	 */
-	public interface ResponseHandler<T> {
-		void onResponse(T response);
+	@Override
+	public void onNext(T response) {
+		responseHandler.accept(response);
 	}
 
-	public BlockingResponseObserver(ResponseHandler<T> responseHandler) {
+	Consumer<T> responseHandler;
+
+	public BlockingResponseObserver(Consumer<T> responseHandler) {
 		this.responseHandler = responseHandler;
 	}
 
-	ResponseHandler<T> responseHandler;
-
-	@Override
-	public void onNext(T response) {
-		responseHandler.onResponse(response);
-	}
+	/**
+	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
+	 * of providing a lambda.
+	 */
+	protected BlockingResponseObserver() {}
 
 
 

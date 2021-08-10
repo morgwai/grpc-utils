@@ -84,30 +84,68 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
-	CallStreamObserver<ResponseT> streamObserver;
-	Executor processingExecutor;
-	Callable<Boolean> completionIndicator;
-	Callable<ResponseT> responseProducer;
-	Consumer<Throwable> exceptionHandler;
-	Runnable cleanupHandler;
-
-
-
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
 		Executor processingExecutor,
 		Callable<Boolean> completionIndicator,
-		Callable<ResponseT> responseProducer,
+		Callable<ResponseT> messageProducer,
 		Consumer<Throwable> exceptionHandler,
 		Runnable cleanupHandler
 	) {
-		this.streamObserver = streamObserver;
-		this.processingExecutor = processingExecutor;
+		this(streamObserver, processingExecutor);
 		this.completionIndicator = completionIndicator;
-		this.responseProducer = responseProducer;
+		this.messageProducer = messageProducer;
 		this.exceptionHandler = exceptionHandler;
 		this.cleanupHandler = cleanupHandler;
 	}
+
+	/**
+	 * Constructor for those who prefer to override {@link #isCompleted()},
+	 * {@link #produceMessage()}, {@link #handleException(Throwable)} and {@link #cleanup()} in a
+	 * subclass instead of providing lambdas.
+	 */
+	protected DispatchingOnReadyHandler(
+			CallStreamObserver<ResponseT> streamObserver,
+			Executor processingExecutor
+	) {
+		this.streamObserver = streamObserver;
+		this.processingExecutor = processingExecutor;
+	}
+
+	CallStreamObserver<ResponseT> streamObserver;
+	Executor processingExecutor;
+
+
+
+	protected boolean isCompleted() throws Exception {
+		return completionIndicator.call();
+	}
+
+	Callable<Boolean> completionIndicator;
+
+
+
+	protected ResponseT produceMessage() throws Exception {
+		return messageProducer.call();
+	}
+
+	Callable<ResponseT> messageProducer;
+
+
+
+	protected void handleException(Throwable error) {
+		exceptionHandler.accept(error);
+	}
+
+	Consumer<Throwable> exceptionHandler;
+
+
+
+	protected void cleanup() {
+		cleanupHandler.run();
+	}
+
+	Runnable cleanupHandler;
 
 
 
@@ -130,15 +168,15 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	void handleSingleReadinessCycle() {
 		var ready = isReady();
 		try {
-			while (ready && ! completionIndicator.call()) {
-				streamObserver.onNext(responseProducer.call());
+			while (ready && ! isCompleted()) {
+				streamObserver.onNext(produceMessage());
 				ready = isReady();
 			}
 			if (ready) streamObserver.onCompleted();
 		} catch (Throwable t) {
-			exceptionHandler.accept(t);
+			handleException(t);;
 		} finally {
-			if (ready) cleanupHandler.run();
+			if (ready) cleanup();
 		}
 	}
 
