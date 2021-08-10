@@ -3,12 +3,9 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
-import java.util.function.Function;
+import java.util.function.Consumer;
 
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import io.grpc.stub.ServerCallStreamObserver;
-import io.grpc.stub.StreamObserver;
 
 
 
@@ -23,7 +20,7 @@ import io.grpc.stub.StreamObserver;
  *        responseObserver.onNext(responseProducer.call());
  *    responseObserver.onCompleted();
  *} catch (Throwable t) {
- *    exceptionHandler.apply(t);
+ *    exceptionHandler.accept(t);
  *} finally {
  *    cleanupHandler.run();
  *}
@@ -46,7 +43,7 @@ import io.grpc.stub.StreamObserver;
  *        () -&gt; state.produceNextResponseMessage(),
  *        (Throwable t) -&gt; {
  *            log.log(Level.SEVERE, "exception", t);
- *            return sendAndRethrowErrorIfNeeded(t, responseObserver);
+ *            sendAndRethrowErrorIfNeeded(t, responseObserver);
  *        },
  *        () -&gt; state.cleanup()
  *    ));
@@ -90,7 +87,7 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 	Executor processingExecutor;
 	Callable<Boolean> completionIndicator;
 	Callable<ResponseT> responseProducer;
-	Function<Throwable, Void> exceptionHandler;
+	Consumer<Throwable> exceptionHandler;
 	Runnable cleanupHandler;
 
 
@@ -100,7 +97,7 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 		Executor processingExecutor,
 		Callable<Boolean> completionIndicator,
 		Callable<ResponseT> responseProducer,
-		Function<Throwable, Void> exceptionHandler,
+		Consumer<Throwable> exceptionHandler,
 		Runnable cleanupHandler
 	) {
 		this.responseObserver = responseObserver;
@@ -113,28 +110,10 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 
 
 
-	/**
-	 * Common processing of exceptions for {@link #exceptionHandler}: calls
-	 * {@link StreamObserver#onError(Throwable)} if <code>t</code> is <b>not</b> a
-	 * {@link StatusRuntimeException} and re-throws <code>t</code> if it is an {@link Error}.
-	 */
-	public static Void sendAndRethrowErrorIfNeeded(
-			Throwable t, StreamObserver<?> responseObserver) {
-		if ( ! (t instanceof StatusRuntimeException)) {
-			responseObserver.onError(Status.INTERNAL.withCause(t).asException());
-		}
-		if (t instanceof Error) throw (Error) t;
-		return null;
-	}
-
-
-
-	public void run() {
-		synchronized (responseObserver) {
-			if (processingInProgress) return;
-			processingInProgress = true;
-		}
-		processingExecutor.execute(singleReadinessCycleHandler);
+	public synchronized void run() {
+		if (processingInProgress) return;
+		processingInProgress = true;
+		processingExecutor.execute(() -> handleSingleReadinessCycle());
 	}
 
 	boolean processingInProgress = false;
@@ -147,27 +126,24 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 	 * span over more than 1 cycle. {@link #processingInProgress} flag prevents {@link #handle()}
 	 * spawning another handler in such case.
 	 */
-	Runnable singleReadinessCycleHandler = () -> {
+	void handleSingleReadinessCycle() {
+		var ready = isReady();
 		try {
-			while (true) {
-				if (responseObserver.isCancelled()) return;
-				synchronized (responseObserver) {
-					if ( ! responseObserver.isReady()) {
-						processingInProgress = false;
-						return;
-					}
-				}
-				if (completionIndicator.call()) {
-					responseObserver.onCompleted();
-					return;
-				}
-
+			while (ready && ! completionIndicator.call()) {
 				responseObserver.onNext(responseProducer.call());
+				ready = isReady();
 			}
+			if (ready) responseObserver.onCompleted();
 		} catch (Throwable t) {
-			exceptionHandler.apply(t);
+			exceptionHandler.accept(t);
 		} finally {
-			cleanupHandler.run();
+			if (ready) cleanupHandler.run();
 		}
-	};
+	}
+
+	synchronized boolean isReady() {
+		if (responseObserver.isReady()) return true;
+		processingInProgress = false;
+		return false;
+	}
 }
