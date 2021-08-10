@@ -5,27 +5,27 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
-import io.grpc.stub.ServerCallStreamObserver;
+import io.grpc.stub.CallStreamObserver;
 
 
 
 /**
- * Handles server streaming calls that need to dispatch response producing to an external executor
- * while ensuring that no excessive response buffering happens.
+ * Handles message streaming to observer, while ensuring that no excessive response buffering
+ * happens, in cases when message producing must be dispatched to an external executor.
  * Setting an instance as an <code>onReadyHandler</code> will eventually have similar effects as if
  * the below code was dispatched to {@link #processingExecutor}:
  * <pre>
  *try {
  *    while ( ! completionIndicator.call())
- *        responseObserver.onNext(responseProducer.call());
- *    responseObserver.onCompleted();
+ *        streamObserver.onNext(messageProducer.call());
+ *    streamObserver.onCompleted();
  *} catch (Throwable t) {
  *    exceptionHandler.accept(t);
  *} finally {
  *    cleanupHandler.run();
  *}
  * </pre>
- * However, the work is automatically suspended/resumed whenever {@link #responseObserver} becomes
+ * However, the work is automatically suspended/resumed whenever {@link #streamObserver} becomes
  * unready/ready and executor's thread is <b>released</b> whenever observer becomes unready.<br/>
  * <br/>
  * Typical usage:
@@ -42,8 +42,7 @@ import io.grpc.stub.ServerCallStreamObserver;
  *        () -&gt; state.isCompleted(),
  *        () -&gt; state.produceNextResponseMessage(),
  *        (Throwable t) -&gt; {
- *            log.log(Level.SEVERE, "exception", t);
- *            sendAndRethrowErrorIfNeeded(t, responseObserver);
+ *            if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
  *        },
  *        () -&gt; state.cleanup()
  *    ));
@@ -55,35 +54,37 @@ import io.grpc.stub.ServerCallStreamObserver;
  * retained in order not to lose given DB transaction/cursor. In such cases processing should be
  * implemented similar as the below code:
  * <pre>
- *responseObserver.setOnReadyHandler(() -&gt; {
- *    synchronized (responseObserver) {
- *        responseObserver.notify();
- *    }
- *});
- *jdbcExecutor.execute(() -&gt; {
- *    try {
- *        var state = new MyCallState(request);
- *        while ( ! state.isCompleted()) {
- *            synchronized (responseObserver) {
- *                while ( ! responseObserver.isReady()) responseObserver.wait();
- *            }
- *            responseObserver.onNext(state.produceNextResponseMessage());
+ *public void myServerStreamingMethod(
+ *        RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+ *    responseObserver.setOnReadyHandler(() -&gt; {
+ *        synchronized (responseObserver) {
+ *            responseObserver.notify();
  *        }
- *        responseObserver.onCompleted();
- *    } catch (Throwable t) {
- *        log.log(Level.SEVERE, "exception", t);
- *        sendAndRethrowErrorIfNeeded(t, responseObserver);
- *    } finally {
- *        state.cleanup();
- *    }
- *});
+ *    });
+ *    jdbcExecutor.execute(() -&gt; {
+ *        try {
+ *            var state = new MyCallState(request);
+ *            while ( ! state.isCompleted()) {
+ *                synchronized (responseObserver) {
+ *                    while ( ! responseObserver.isReady()) responseObserver.wait();
+ *                }
+ *                responseObserver.onNext(state.produceNextResponseMessage());
+ *            }
+ *            responseObserver.onCompleted();
+ *        } catch (Throwable t) {
+ *            if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
+ *        } finally {
+ *            state.cleanup();
+ *        }
+ *    });
+ *}
  * </pre>
  */
-public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements Runnable {
+public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
-	ServerCallStreamObserver<ResponseT> responseObserver;
+	CallStreamObserver<ResponseT> streamObserver;
 	Executor processingExecutor;
 	Callable<Boolean> completionIndicator;
 	Callable<ResponseT> responseProducer;
@@ -92,15 +93,15 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 
 
 
-	public DispatchingServerStreamingCallOnReadyHandler(
-		ServerCallStreamObserver<ResponseT> responseObserver,
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResponseT> streamObserver,
 		Executor processingExecutor,
 		Callable<Boolean> completionIndicator,
 		Callable<ResponseT> responseProducer,
 		Consumer<Throwable> exceptionHandler,
 		Runnable cleanupHandler
 	) {
-		this.responseObserver = responseObserver;
+		this.streamObserver = streamObserver;
 		this.processingExecutor = processingExecutor;
 		this.completionIndicator = completionIndicator;
 		this.responseProducer = responseProducer;
@@ -130,10 +131,10 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 		var ready = isReady();
 		try {
 			while (ready && ! completionIndicator.call()) {
-				responseObserver.onNext(responseProducer.call());
+				streamObserver.onNext(responseProducer.call());
 				ready = isReady();
 			}
-			if (ready) responseObserver.onCompleted();
+			if (ready) streamObserver.onCompleted();
 		} catch (Throwable t) {
 			exceptionHandler.accept(t);
 		} finally {
@@ -142,7 +143,7 @@ public class DispatchingServerStreamingCallOnReadyHandler<ResponseT> implements 
 	}
 
 	synchronized boolean isReady() {
-		if (responseObserver.isReady()) return true;
+		if (streamObserver.isReady()) return true;
 		processingInProgress = false;
 		return false;
 	}

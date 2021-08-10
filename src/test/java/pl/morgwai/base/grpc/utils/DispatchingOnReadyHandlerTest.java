@@ -15,11 +15,11 @@ import static org.junit.Assert.*;
 
 
 
-public class DispatchingServerStreamingCallOnReadyHandlerTest {
+public class DispatchingOnReadyHandlerTest {
 
 
 
-	DispatchingServerStreamingCallOnReadyHandler<Integer> handler;
+	DispatchingOnReadyHandler<Integer> handler;
 
 	FakeResponseObserver<Integer> responseObserver;
 
@@ -59,7 +59,7 @@ public class DispatchingServerStreamingCallOnReadyHandlerTest {
 		final var numberOfexpectedResponses = 10;
 		responseObserver.setOutputBufferSize(3);
 		responseObserver.setUnreadyDuration(5);
-		handler = new DispatchingServerStreamingCallOnReadyHandler<Integer>(
+		handler = new DispatchingOnReadyHandler<Integer>(
 			responseObserver,
 			userExecutor,
 			() -> responseCount >= numberOfexpectedResponses,
@@ -96,7 +96,7 @@ public class DispatchingServerStreamingCallOnReadyHandlerTest {
 		responseObserver.setOutputBufferSize(3);
 		responseObserver.setUnreadyDuration(1);
 		final var concurrencyGuard = new ReentrantLock();
-		handler = new DispatchingServerStreamingCallOnReadyHandler<>(
+		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
 			userExecutor,
 			() -> responseCount >= numberOfexpectedResponses,
@@ -144,7 +144,7 @@ public class DispatchingServerStreamingCallOnReadyHandlerTest {
 		final var thrownException = new FileNotFoundException();
 		responseObserver.setOutputBufferSize(3);
 		responseObserver.setUnreadyDuration(5);
-		handler = new DispatchingServerStreamingCallOnReadyHandler<>(
+		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
 			userExecutor,
 			() -> responseCount >= numberOfexpectedResponses,
