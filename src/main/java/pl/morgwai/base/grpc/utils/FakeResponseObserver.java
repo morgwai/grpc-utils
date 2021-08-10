@@ -283,18 +283,11 @@ public class FakeResponseObserver<ResponseT>
 
 	@Override
 	public void request(int count) {
-		if ( ! concurrencyGuard.tryLock("request")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
-			if (nextMessageRequestedHandler != null) {
-				for (int i = 0; i < count; i++) {
-					grpcInternalExecutor.execute(nextMessageRequestedHandler);
-				}
+		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
+		if (nextMessageRequestedHandler != null) {
+			for (int i = 0; i < count; i++) {
+				grpcInternalExecutor.execute(nextMessageRequestedHandler);
 			}
-		} finally {
-			concurrencyGuard.unlock();
 		}
 	}
 

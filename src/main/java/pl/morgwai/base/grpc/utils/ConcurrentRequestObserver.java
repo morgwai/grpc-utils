@@ -182,6 +182,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 		@Override
 		public void onCompleted() {
+			boolean ready;
 			synchronized (ConcurrentRequestObserver.this) {
 				if ( ! ongoingRequests.remove(request)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
@@ -191,12 +192,10 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 					return;
 				}
 
-				if (responseObserver.isReady()) {
-					responseObserver.request(1);
-				} else {
-					joblessThreadCount++;
-				}
+				ready = responseObserver.isReady();
+				if ( ! ready) joblessThreadCount++;
 			}
+			if (ready) responseObserver.request(1);
 		}
 
 
