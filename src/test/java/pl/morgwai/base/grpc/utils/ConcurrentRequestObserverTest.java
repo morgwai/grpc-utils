@@ -104,21 +104,21 @@ public class ConcurrentRequestObserverTest {
 	@Test
 	public void testSynchronousProcessingResponseObserverAlwaysReady() throws InterruptedException {
 		numberOfRequests = 10;
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
-			singleRequestMessageResponseObserver.onNext(new ResponseMessage(requestMessage.id));
-			singleRequestMessageResponseObserver.onCompleted();
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
+			individualObserver.onNext(new ResponseMessage(requestMessage.id));
+			individualObserver.onCompleted();
 		};
 
 		synchronized (listenerLock) {
 			responseObserver.request(1);  // runs the test, everything happens in 1 thread
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
-		assertEquals("all messages should be written",
+		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
@@ -135,21 +135,21 @@ public class ConcurrentRequestObserverTest {
 		numberOfRequests = 15;
 		responseObserver.outputBufferSize = 4;
 		responseObserver.unreadyDurationMillis = 3;
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
-			singleRequestMessageResponseObserver.onNext(new ResponseMessage(requestMessage.id));
-			singleRequestMessageResponseObserver.onCompleted();
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
+			individualObserver.onNext(new ResponseMessage(requestMessage.id));
+			individualObserver.onCompleted();
 		};
 
 		synchronized (listenerLock) {
 			responseObserver.request(1);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
-		assertEquals("all messages should be written",
+		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
@@ -164,19 +164,19 @@ public class ConcurrentRequestObserverTest {
 	public void testOnError() throws InterruptedException {
 		numberOfRequests = 2;
 		Exception error = new Exception();
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			if (deliveredRequestCount > 1) {
 				fail("no messages should be requested after an error");
 			}
-			singleRequestMessageResponseObserver.onError(error);
+			individualObserver.onError(error);
 		};
 
 		synchronized (listenerLock) {
 			responseObserver.request(1);
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -192,13 +192,13 @@ public class ConcurrentRequestObserverTest {
 	public void testOnNextAfterOnCompleted() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			synchronized (exceptionThrownHolder) {
 				try {
-					singleRequestMessageResponseObserver.onNext(
+					individualObserver.onNext(
 							new ResponseMessage(requestMessage.id));
-					singleRequestMessageResponseObserver.onCompleted();
-					singleRequestMessageResponseObserver.onNext(
+					individualObserver.onCompleted();
+					individualObserver.onNext(
 							new ResponseMessage(requestMessage.id));
 					exceptionThrownHolder[0] = false;
 				} catch (IllegalStateException e) {
@@ -214,8 +214,8 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -231,13 +231,13 @@ public class ConcurrentRequestObserverTest {
 	public void testOnCompletedTwice() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			synchronized (exceptionThrownHolder) {
 				try {
-					singleRequestMessageResponseObserver.onNext(
+					individualObserver.onNext(
 							new ResponseMessage(requestMessage.id));
-					singleRequestMessageResponseObserver.onCompleted();
-					singleRequestMessageResponseObserver.onCompleted();
+					individualObserver.onCompleted();
+					individualObserver.onCompleted();
 				} catch (IllegalStateException e) {
 					exceptionThrownHolder[0] = true;
 				}
@@ -251,8 +251,8 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -268,13 +268,13 @@ public class ConcurrentRequestObserverTest {
 	public void testOnErrorAfterOnCompleted() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			synchronized (exceptionThrownHolder) {
 				try {
-					singleRequestMessageResponseObserver.onNext(
+					individualObserver.onNext(
 							new ResponseMessage(requestMessage.id));
-					singleRequestMessageResponseObserver.onCompleted();
-					singleRequestMessageResponseObserver.onError(new Exception());;
+					individualObserver.onCompleted();
+					individualObserver.onError(new Exception());;
 				} catch (IllegalStateException e) {
 					exceptionThrownHolder[0] = true;
 				}
@@ -288,8 +288,8 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -309,7 +309,7 @@ public class ConcurrentRequestObserverTest {
 		boolean[] executeAfterShutdownHolder = {false};
 		long halfProcessingDelay = maxProcessingDelayMillis / 2;
 
-		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			final AtomicInteger responseCount = new AtomicInteger(0);
 			// produce each response asynchronously in about 1-3ms
 			for (int i = 0; i < responsesPerRequest; i++) {
@@ -321,10 +321,10 @@ public class ConcurrentRequestObserverTest {
 						try {
 							Thread.sleep(processingDelay);
 						} catch (InterruptedException e) {}
-						singleRequestMessageResponseObserver.onNext(
+						individualObserver.onNext(
 								new ResponseMessage(requestMessage.id));
 						if (responseCount.incrementAndGet() == responsesPerRequest) {
-							singleRequestMessageResponseObserver.onCompleted();
+							individualObserver.onCompleted();
 						}
 					});
 				} catch (Exception e) {
@@ -339,14 +339,14 @@ public class ConcurrentRequestObserverTest {
 			responseObserver.request(concurrencyLevel);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100 +
-				Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		var executorShutdownTimeoutMillis = 100
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
 
-		assertEquals("all messages should be written",
+		assertEquals("correct number of messages should be written",
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());

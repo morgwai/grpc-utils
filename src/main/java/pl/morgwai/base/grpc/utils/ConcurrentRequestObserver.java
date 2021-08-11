@@ -120,6 +120,8 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		this.errorHandler = errorHandler;
 	}
 
+
+
 	/**
 	 * Constructor for those who prefer to override {@link #onRequest(Object, CallStreamObserver)}
 	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
