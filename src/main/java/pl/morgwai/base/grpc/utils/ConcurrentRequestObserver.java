@@ -1,11 +1,14 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
@@ -19,10 +22,10 @@ import io.grpc.stub.StreamObserver;
  * After creating an observer, but before returning it from a method, a delivery of <code>n</code>
  * request messages should be requested via {@link io.grpc.stub.CallStreamObserver#request(int)
  * responseObserver.request(n)} method, where <code>n</code> is the desired level of concurrency,
- * usually the size of a threadPool to which {@link #onRequest(Object, StreamObserver)} dispatches
- * work. From then on, the observer will maintain this number of request messages being concurrently
- * processed, as long as the client can deliver them and consume responses on time and no one else
- * occupies the threadPool.<br/>
+ * usually the size of a threadPool to which {@link #onRequest(Object, CallStreamObserver)}
+ * dispatches work. From then on, the observer will maintain this number of request messages being
+ * concurrently processed, as long as the client can deliver them and consume responses on time and
+ * no one else occupies the threadPool.<br/>
  * For example:<br/>
  * <br/>
  * <pre>
@@ -76,11 +79,11 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 */
 	protected void onRequest(
 			RequestT requestMessage,
-			StreamObserver<ResponseT> singleRequestMessageResponseObserver) {
+			CallStreamObserver<ResponseT> singleRequestMessageResponseObserver) {
 		requestHandler.accept(requestMessage, singleRequestMessageResponseObserver);
 	}
 
-	protected BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler;
+	protected BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler;
 
 
 
@@ -104,12 +107,12 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * level while also preventing excessive buffering of response messages.
 	 *
 	 * @param responseObserver
-	 * @param requestHandler lambda called by {@link #onRequest(Object, StreamObserver)}
+	 * @param requestHandler lambda called by {@link #onRequest(Object, CallStreamObserver)}
 	 * @param errorHandler lambda called by {@link #onError(Throwable)}
 	 */
 	public ConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
-		BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler,
+		BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
 		this(responseObserver);
@@ -118,8 +121,8 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	}
 
 	/**
-	 * Constructor for those who prefer to override {@link #onRequest(Object, StreamObserver)} and
-	 * {@link #onError(Throwable)} in a subclass instead of providing lambdas.
+	 * Constructor for those who prefer to override {@link #onRequest(Object, CallStreamObserver)}
+	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
 	 */
 	protected ConcurrentRequestObserver(ServerCallStreamObserver<ResponseT> responseObserver) {
 		this.responseObserver = responseObserver;
@@ -133,15 +136,31 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	boolean halfClosed = false;
 	int joblessThreadCount = 0;
-	Set<RequestT> ongoingRequests = new HashSet<>();
+	Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
 
 
-	synchronized void onResponseObserverReady() {
-		// request 1 message for every thread that refrained from doing so when buffer was too full
-		if (joblessThreadCount > 0 && ! halfClosed) {
-			responseObserver.request(joblessThreadCount);
-			joblessThreadCount = 0;
+	void onResponseObserverReady() {
+		List<SingleRequestMessageResponseObserver> ongoingRequestsCopy;
+		synchronized (this) {
+			// request 1 message for every thread that refrained from doing so when the buffer
+			// was too full
+			if (joblessThreadCount > 0 && ! halfClosed) {
+				responseObserver.request(joblessThreadCount);
+				joblessThreadCount = 0;
+			}
+
+			// copy ongoingRequests in case some of them get completed and try to remove themselves
+			// from the set while it is iterated through below (new requests will not come thanks to
+			// listener's lock)
+			ongoingRequestsCopy = new ArrayList<>(ongoingRequests);
+		}
+		for (var individualObserver: ongoingRequestsCopy) {
+			synchronized (individualObserver) {
+				if (individualObserver.onReadyHandler != null) {
+					individualObserver.onReadyHandler.run();
+				}
+			}
 		}
 	}
 
@@ -157,7 +176,13 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	@Override
 	public void onNext(RequestT request) {
-		onRequest(request, new SingleRequestMessageResponseObserver(request));
+		var individualObserver = new SingleRequestMessageResponseObserver(request);
+		onRequest(request, individualObserver);
+		synchronized (individualObserver) {
+			if (individualObserver.onReadyHandler != null) {
+				individualObserver.onReadyHandler.run();
+			}
+		}
 	}
 
 
@@ -165,16 +190,17 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	/**
 	 * Observer of responses to 1 particular request message.
 	 */
-	class SingleRequestMessageResponseObserver implements StreamObserver<ResponseT> {
+	class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
 		RequestT request;
+		Runnable onReadyHandler;
 
 
 
 		SingleRequestMessageResponseObserver(RequestT request) {
 			this.request = request;
 			synchronized (ConcurrentRequestObserver.this) {
-				ongoingRequests.add(request);
+				ongoingRequests.add(this);
 			}
 		}
 
@@ -184,7 +210,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		public void onCompleted() {
 			boolean ready;
 			synchronized (ConcurrentRequestObserver.this) {
-				if ( ! ongoingRequests.remove(request)) {
+				if ( ! ongoingRequests.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				if (halfClosed && ongoingRequests.isEmpty()) {
@@ -203,7 +229,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		@Override
 		public void onNext(ResponseT response) {
 			synchronized (ConcurrentRequestObserver.this) {
-				if ( ! ongoingRequests.contains(request)) {
+				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				responseObserver.onNext(response);
@@ -215,12 +241,38 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		@Override
 		public void onError(Throwable t) {
 			synchronized (ConcurrentRequestObserver.this) {
-				if ( ! ongoingRequests.contains(request)) {
+				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				responseObserver.onError(t);
 			}
 		}
+
+
+
+		@Override
+		public boolean isReady() {
+			synchronized (ConcurrentRequestObserver.this) {
+				return responseObserver.isReady();
+			}
+		}
+
+
+
+		@Override
+		public void setOnReadyHandler(Runnable onReadyHandler) {
+			synchronized (this) {
+				this.onReadyHandler = onReadyHandler;
+			}
+		}
+
+
+
+		@Override public void disableAutoInboundFlowControl() {}
+
+		@Override public void request(int count) {}
+
+		@Override public void setMessageCompression(boolean enable) {}
 	}
 
 
