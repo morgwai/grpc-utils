@@ -130,9 +130,10 @@ public class ConcurrentRequestObserverTest {
 
 
 	@Test
-	public void testSynchronousProcessingResponseObserverUnreadyOnce() throws InterruptedException {
-		numberOfRequests = 10;
-		responseObserver.outputBufferSize = 6;
+	public void testSynchronousProcessingResponseObserverUnreadySometimes()
+			throws InterruptedException {
+		numberOfRequests = 15;
+		responseObserver.outputBufferSize = 4;
 		responseObserver.unreadyDurationMillis = 3;
 		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
 			singleRequestMessageResponseObserver.onNext(new ResponseMessage(requestMessage.id));
@@ -300,11 +301,13 @@ public class ConcurrentRequestObserverTest {
 
 
 
-	void testAsyncProcessing(int responsesPerRequest, int concurrencyLevel)
+	void testAsyncProcessing(
+			long maxProcessingDelayMillis, int responsesPerRequest, int concurrencyLevel)
 			throws InterruptedException {
 		ExecutorService userExecutor = new ThreadPoolExecutor(
 				concurrencyLevel, concurrencyLevel, 0, TimeUnit.DAYS, new LinkedBlockingQueue<>());
 		boolean[] executeAfterShutdownHolder = {false};
+		long halfProcessingDelay = maxProcessingDelayMillis / 2;
 
 		requestObserver.requestHandler = (requestMessage, singleRequestMessageResponseObserver) -> {
 			final AtomicInteger responseCount = new AtomicInteger(0);
@@ -312,9 +315,11 @@ public class ConcurrentRequestObserverTest {
 			for (int i = 0; i < responsesPerRequest; i++) {
 				try {
 					userExecutor.execute(() -> {
+						// sleep time varies depending on request/response message counts
+						var processingDelay = halfProcessingDelay +
+								((requestMessage.id + responseCount.get()) % halfProcessingDelay);
 						try {
-							// sleep time varies 1-3ms depending on request/response message counts
-							Thread.sleep(((requestMessage.id + responseCount.get()) % 3) + 1);
+							Thread.sleep(processingDelay);
 						} catch (InterruptedException e) {}
 						singleRequestMessageResponseObserver.onNext(
 								new ResponseMessage(requestMessage.id));
@@ -358,19 +363,19 @@ public class ConcurrentRequestObserverTest {
 	@Test
 	public void testAsyncProcessing100Requests5Threads() throws InterruptedException {
 		numberOfRequests = 100;
-		maxRequestDeliveryDelayMillis = 5;
+		maxRequestDeliveryDelayMillis = 3;
 		responseObserver.outputBufferSize = 13;
-		responseObserver.unreadyDurationMillis = 5;
-		testAsyncProcessing(3, 5);
+		responseObserver.unreadyDurationMillis = 3;
+		testAsyncProcessing(4l, 3, 5);
 	}
 
 	@Test
-	public void testAsyncSequentialProcessing100Requests() throws InterruptedException {
-		numberOfRequests = 100;
-		maxRequestDeliveryDelayMillis = 5;
-		responseObserver.outputBufferSize = 7;
+	public void testAsyncSequentialProcessing40Requests() throws InterruptedException {
+		numberOfRequests = 40;
+		maxRequestDeliveryDelayMillis = 3;
+		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(1, 1);
+		testAsyncProcessing(4l, 1, 1);
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
 	}
