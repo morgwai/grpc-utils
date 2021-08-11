@@ -121,7 +121,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		return completionIndicator.call();
 	}
 
-	Callable<Boolean> completionIndicator;
+	protected Callable<Boolean> completionIndicator;
 
 
 
@@ -129,7 +129,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		return messageProducer.call();
 	}
 
-	Callable<ResponseT> messageProducer;
+	protected Callable<ResponseT> messageProducer;
 
 
 
@@ -137,7 +137,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		exceptionHandler.accept(error);
 	}
 
-	Consumer<Throwable> exceptionHandler;
+	protected Consumer<Throwable> exceptionHandler;
 
 
 
@@ -145,7 +145,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		cleanupHandler.run();
 	}
 
-	Runnable cleanupHandler;
+	protected Runnable cleanupHandler;
 
 
 
@@ -156,6 +156,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	}
 
 	boolean processingInProgress = false;
+
+
 
 	/**
 	 * Handles 1 cycle of {@link #responseObserver}'s readiness.<br/>

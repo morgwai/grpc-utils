@@ -35,11 +35,13 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 		responseHandler.accept(response);
 	}
 
-	Consumer<T> responseHandler;
-
 	public BlockingResponseObserver(Consumer<T> responseHandler) {
 		this.responseHandler = responseHandler;
 	}
+
+	protected Consumer<T> responseHandler;
+
+
 
 	/**
 	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
@@ -48,16 +50,6 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	protected BlockingResponseObserver() {}
 
 
-
-	boolean completed = false;
-	public boolean isCompleted() {return completed;}
-
-	/**
-	 * equivalent to {@link #awaitCompletion(long) awaitCompletion(0l)}.
-	 */
-	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
-		awaitCompletion(0l);
-	}
 
 	/**
 	 * Awaits up to <code>timeoutMillis</code> for the response to be completed with
@@ -78,6 +70,18 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 		if (error != null) throw new ErrorReportedException(error);
 	}
 
+	boolean completed = false;
+	public boolean isCompleted() {return completed;}
+
+	/**
+	 * equivalent to {@link #awaitCompletion(long) awaitCompletion(0l)}.
+	 */
+	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
+		awaitCompletion(0l);
+	}
+
+
+
 	@Override
 	public synchronized void onCompleted() {
 		completed = true;
@@ -86,14 +90,16 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 
-	Throwable error;
-	public Throwable getError() {return error;}
-
 	@Override
 	public void onError(Throwable error) {
 		this.error = error;
 		onCompleted();
 	}
+
+	Throwable error;
+	public Throwable getError() {return error;}
+
+
 
 	public static class ErrorReportedException extends Exception {
 		ErrorReportedException(Throwable reportedError) {super(reportedError);}

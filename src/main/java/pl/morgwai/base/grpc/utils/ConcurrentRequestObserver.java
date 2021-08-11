@@ -80,7 +80,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		requestHandler.accept(requestMessage, singleRequestMessageResponseObserver);
 	}
 
-	BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler;
+	protected BiConsumer<RequestT, StreamObserver<ResponseT>> requestHandler;
 
 
 
@@ -95,7 +95,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 		errorHandler.accept(t);
 	}
 
-	Consumer<Throwable> errorHandler;
+	protected Consumer<Throwable> errorHandler;
 
 
 
