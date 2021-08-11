@@ -168,8 +168,9 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * spawning another handler in such case.
 	 */
 	void handleSingleReadinessCycle() {
-		var ready = isReady();
+		var ready = true;
 		try {
+			ready = isReady();
 			while (ready && ! isCompleted()) {
 				streamObserver.onNext(produceMessage());
 				ready = isReady();
