@@ -57,8 +57,8 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testPositiveCase() throws InterruptedException {
 		final var numberOfexpectedResponses = 10;
-		responseObserver.setOutputBufferSize(3);
-		responseObserver.setUnreadyDuration(5);
+		responseObserver.outputBufferSize = 3;
+		responseObserver.unreadyDurationMillis = 5;
 		handler = new DispatchingOnReadyHandler<Integer>(
 			responseObserver,
 			userExecutor,
@@ -93,8 +93,8 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testSecondHandlerwillNotSpawn() throws InterruptedException {
 		final var numberOfexpectedResponses = 10;
-		responseObserver.setOutputBufferSize(3);
-		responseObserver.setUnreadyDuration(1);
+		responseObserver.outputBufferSize = 3;
+		responseObserver.unreadyDurationMillis = 1;
 		final var concurrencyGuard = new ReentrantLock();
 		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
@@ -142,8 +142,8 @@ public class DispatchingOnReadyHandlerTest {
 	public void testExceptionIsHandledProperly() throws InterruptedException {
 		final var numberOfexpectedResponses = 5;
 		final var thrownException = new FileNotFoundException();
-		responseObserver.setOutputBufferSize(3);
-		responseObserver.setUnreadyDuration(5);
+		responseObserver.outputBufferSize = 3;
+		responseObserver.unreadyDurationMillis = 5;
 		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
 			userExecutor,

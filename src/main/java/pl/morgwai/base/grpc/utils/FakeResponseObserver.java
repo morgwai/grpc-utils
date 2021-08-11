@@ -33,6 +33,13 @@ public class FakeResponseObserver<ResponseT>
 
 	Executor grpcInternalExecutor;
 
+	/**
+	 * {@code true} if there were attempts to execute more tasks after {@link #grpcInternalExecutor}
+	 * was shutdown.
+	 */
+	public boolean getExecuteAfterShutdown() { return executeAfterShutdown; }
+	volatile boolean executeAfterShutdown = false;
+
 
 
 	/**
@@ -50,46 +57,6 @@ public class FakeResponseObserver<ResponseT>
 
 
 
-	Runnable onCancelHandler;
-
-	@Override
-	public void setOnCancelHandler(Runnable onCancelHandler) {
-		if ( ! concurrencyGuard.tryLock("setOnCancelHandler")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			this.onCancelHandler = onCancelHandler;
-		} finally {
-			concurrencyGuard.unlock();
-		}
-	}
-
-	volatile boolean cancelled = false;
-
-	@Override
-	public boolean isCancelled() {
-		if ( ! concurrencyGuard.tryLock("isCancelled")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			return cancelled;
-		} finally {
-			concurrencyGuard.unlock();
-		}
-	}
-
-	/**
-	 * Simulates client canceling a call.
-	 */
-	public void cancel() {
-		synchronized (listenerLock) {
-			cancelled = true;
-			if (onCancelHandler != null) onCancelHandler.run();
-		}
-	}
-
-
-
 	/**
 	 * List of arguments of calls to {@link #onNext(Object)}.
 	 */
@@ -100,20 +67,57 @@ public class FakeResponseObserver<ResponseT>
 	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
 	 * submitted to it. Default is <code>0</code> which means always ready.
 	 */
-	public void setOutputBufferSize(int outputBufferSize) {
-		this.outputBufferSize = outputBufferSize;
-	}
-	int outputBufferSize = 0;
+	public volatile int outputBufferSize = 0;
 
 	/**
 	 * Duration for which observer will be unready. By default 1ms.
 	 */
-	public void setUnreadyDuration(long unreadyDurationMillis) {
-		this.unreadyDurationMillis = unreadyDurationMillis;
-	}
-	long unreadyDurationMillis = 1l;
+	public volatile long unreadyDurationMillis = 1l;
 
-	volatile boolean ready = true;
+
+
+	@Override
+	public void onNext(ResponseT message) {
+		if ( ! concurrencyGuard.tryLock("onNext")) {
+			throw new AssertionError("concurrency violation");
+		}
+		try {
+			if (log.isLoggable(Level.FINEST)) log.finest("response sent: " + message);
+			if (cancelled) throw Status.CANCELLED.asRuntimeException();
+			// TODO: some other methods probably should check cancel state also:
+			// verify which ones and fix it.
+
+			outputData.add(message);
+
+			// mark observer unready and schedule becoming ready again
+			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
+				log.finer("response observer unready");
+				ready = false;
+				try {
+					grpcInternalExecutor.execute(() -> markObserverReady(unreadyDurationMillis));
+				} catch (Exception e) {
+					executeAfterShutdown = true;
+				}
+			}
+		} finally {
+			concurrencyGuard.unlock();
+		}
+	}
+
+	private void markObserverReady(long delayMillis) {
+		try {
+			Thread.sleep(delayMillis);
+		} catch (InterruptedException e) {}
+		synchronized (listenerLock) {
+			if ( ! ready) {
+				log.finer("response observer ready");
+				ready = true;
+				onReadyHandler.run();
+			}
+		}
+	}
+
+
 
 	@Override
 	public boolean isReady() {
@@ -127,7 +131,9 @@ public class FakeResponseObserver<ResponseT>
 		}
 	}
 
-	Runnable onReadyHandler;
+	volatile boolean ready = true;
+
+
 
 	@Override
 	public void setOnReadyHandler(Runnable onReadyHandler) {
@@ -141,42 +147,21 @@ public class FakeResponseObserver<ResponseT>
 		}
 	}
 
+	Runnable onReadyHandler;
 
 
-	@Override
-	public void onNext(ResponseT message) {
-		if ( ! concurrencyGuard.tryLock("onNext")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			if (log.isLoggable(Level.FINEST)) log.finest("response sent: " + message);
-			// TODO: some other methods probably should do it too. Verify which ones and fix it.
-			if (cancelled) throw Status.CANCELLED.asRuntimeException();
-			outputData.add(message);
 
-			// mark observer unready every outputBufferSize messages
-			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
-				log.finer("response observer unready");
-				ready = false;
-
-				// schedule to become ready again after clientProcessingDelayMillis ms
-				grpcInternalExecutor.execute(() -> {
-					try {
-						Thread.sleep(unreadyDurationMillis);
-					} catch (InterruptedException e) {}
-					synchronized (listenerLock) {
-						if ( ! ready) {
-							log.finer("response observer ready");
-							ready = true;
-							onReadyHandler.run();
-						}
-					}
-				});
-			}
-		} finally {
-			concurrencyGuard.unlock();
+	/**
+	 * Awaits until finalization (call to either {@link #onCompleted()} or
+	 * {@link #onError(Throwable)}) occurs or timeout exceeds.
+	 */
+	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
+		synchronized (finalizationGuard) {
+			if (finalizedCount == 0 && reportedError == null) finalizationGuard.wait(timeoutMillis);
 		}
 	}
+
+	Object finalizationGuard = new Object();
 
 
 
@@ -188,21 +173,12 @@ public class FakeResponseObserver<ResponseT>
 	int finalizedCount = 0;
 
 	/**
-	 * Stored argument of {@link #onError(Throwable)}.
-	 */
-	public Throwable getReportedError() { return reportedError; }
-	Throwable reportedError;
-
-	/**
 	 * Should an AssertionError be thrown immediately upon second finalization.
 	 * By default <code>false</code>.
 	 */
-	public void setFailOnMultipleFinalizations(boolean failOnMultipleFinalizations) {
-		this.failOnMultipleFinalizations = failOnMultipleFinalizations;
-	}
-	boolean failOnMultipleFinalizations = false;
+	public boolean failOnMultipleFinalizations = false;
 
-	Object finalizationGuard = new Object();
+
 
 	@Override
 	public void onCompleted() {
@@ -222,6 +198,8 @@ public class FakeResponseObserver<ResponseT>
 			concurrencyGuard.unlock();
 		}
 	}
+
+
 
 	@Override
 	public void onError(Throwable t) {
@@ -244,17 +222,12 @@ public class FakeResponseObserver<ResponseT>
 	}
 
 	/**
-	 * Awaits until finalization occurs or timeout exceeds.
+	 * Stored argument of {@link #onError(Throwable)}.
 	 */
-	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-		synchronized (finalizationGuard) {
-			if (finalizedCount == 0 && reportedError == null) finalizationGuard.wait(timeoutMillis);
-		}
-	}
+	public Throwable getReportedError() { return reportedError; }
+	Throwable reportedError;
 
 
-
-	boolean autoRequestDisabled = false;
 
 	@Override
 	public void disableAutoRequest() {
@@ -268,38 +241,79 @@ public class FakeResponseObserver<ResponseT>
 		}
 	}
 
+	@Override
+	public void disableAutoInboundFlowControl() {
+		disableAutoRequest();
+	}
+
+	boolean autoRequestDisabled = false;
+
+
+
 	/**
-	 * {@link #messageProducer} is dispatched to {@link #grpcInternalExecutor} by
-	 * {@link #request(int)} method.<br/>
+	 * Dispatched to {@link #grpcInternalExecutor} by {@link #request(int)} method.<br/>
 	 * It should usually call <code>requestObserver</code>'s {@link StreamObserver#onNext(Object)}
 	 * or {@link StreamObserver#onCompleted()} to simulate a client delivering request messages.
 	 * <br/>
 	 * Lambda instances are usually created in test methods to simulate specific client behavior.
 	 */
-	public void setMessageProducer(Runnable nextMessageRequestedHandler) {
-		this.messageProducer = nextMessageRequestedHandler;
-	}
-	Runnable messageProducer;
+	public Runnable messageProducer;
 
 	@Override
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
 		if (messageProducer != null) {
-			for (int i = 0; i < count; i++) {
-				grpcInternalExecutor.execute(messageProducer);
+			try {
+				for (int i = 0; i < count; i++) grpcInternalExecutor.execute(messageProducer);
+			} catch (Exception e) {
+				executeAfterShutdown = true;
 			}
 		}
 	}
 
 
 
+	/**
+	 * Simulates client canceling a call by a client.
+	 */
+	public void cancel() {
+		synchronized (listenerLock) {
+			cancelled = true;
+			if (onCancelHandler != null) onCancelHandler.run();
+		}
+	}
+
 	@Override
-	public void disableAutoInboundFlowControl() {
-		if ( ! concurrencyGuard.tryLock("disableAutoInboundFlowControl")) {
+	public boolean isCancelled() {
+		if ( ! concurrencyGuard.tryLock("isCancelled")) {
 			throw new AssertionError("concurrency violation");
 		}
-		concurrencyGuard.unlock();
+		try {
+			return cancelled;
+		} finally {
+			concurrencyGuard.unlock();
+		}
 	}
+
+	volatile boolean cancelled = false;
+
+
+
+	@Override
+	public void setOnCancelHandler(Runnable onCancelHandler) {
+		if ( ! concurrencyGuard.tryLock("setOnCancelHandler")) {
+			throw new AssertionError("concurrency violation");
+		}
+		try {
+			this.onCancelHandler = onCancelHandler;
+		} finally {
+			concurrencyGuard.unlock();
+		}
+	}
+
+	Runnable onCancelHandler;
+
+
 
 	@Override
 	public void setCompression(String compression) {
@@ -362,7 +376,7 @@ public class FakeResponseObserver<ResponseT>
 	/**
 	 * <code>FINE</code> will log finalizing events.<br/>
 	 * <code>FINER</code> will log marking observer ready/unready.<br/>
-	 * <code>FINEST</code> will log every message sent to the observer.
+	 * <code>FINEST</code> will log every message sent to the observer and concurrency debug info.
 	 */
 	static final Logger log = Logger.getLogger(FakeResponseObserver.class.getName());
 	public static Logger getLogger() { return log; }
