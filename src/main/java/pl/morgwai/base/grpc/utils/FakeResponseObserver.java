@@ -82,7 +82,7 @@ public class FakeResponseObserver<ResponseT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
-			if (log.isLoggable(Level.FINEST)) log.finest("response sent: " + message);
+			if (log.isLoggable(Level.FINER)) log.finer("response sent: " + message);
 			if (cancelled) throw Status.CANCELLED.asRuntimeException();
 			// TODO: some other methods probably should check cancel state also:
 			// verify which ones and fix it.
@@ -91,7 +91,7 @@ public class FakeResponseObserver<ResponseT>
 
 			// mark observer unready and schedule becoming ready again
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
-				log.finer("response observer unready");
+				log.fine("response observer unready");
 				ready = false;
 				try {
 					grpcInternalExecutor.execute(() -> markObserverReady(unreadyDurationMillis));
@@ -110,7 +110,7 @@ public class FakeResponseObserver<ResponseT>
 		} catch (InterruptedException e) {}
 		synchronized (listenerLock) {
 			if ( ! ready) {
-				log.finer("response observer ready");
+				log.fine("response observer ready");
 				ready = true;
 				onReadyHandler.run();
 			}
@@ -374,9 +374,9 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * <code>FINE</code> will log finalizing events.<br/>
-	 * <code>FINER</code> will log marking observer ready/unready.<br/>
-	 * <code>FINEST</code> will log every message sent to the observer and concurrency debug info.
+	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
+	 * <code>FINER</code> will log every message sent to the observer.<br/>
+	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static final Logger log = Logger.getLogger(FakeResponseObserver.class.getName());
 	public static Logger getLogger() { return log; }

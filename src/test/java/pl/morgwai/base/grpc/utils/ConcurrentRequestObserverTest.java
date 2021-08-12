@@ -417,9 +417,9 @@ public class ConcurrentRequestObserverTest {
 
 	/**
 	 * Change the below value if you need logging:<br/>
-	 * <code>FINE</code> will log finalizing events.<br/>
-	 * <code>FINER</code> will log marking observer ready/unready.<br/>
-	 * <code>FINEST</code> will log every message received and sent and synchronization events
+	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
+	 * <code>FINER</code> will log every message received/sent.<br/>
+	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static final Level LOG_LEVEL = Level.OFF;
 
