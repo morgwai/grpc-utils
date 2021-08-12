@@ -66,6 +66,7 @@ public class ConcurrentRequestObserverTest {
 		}
 
 		synchronized (listenerLock) {
+			if (requestIdSequence >= numberOfRequests) return;
 			var requestMessage = new RequestMessage(++requestIdSequence);
 			if (log.isLoggable(Level.FINER)) log.finer("delivering " + requestMessage);
 			requestObserver.onNext(requestMessage);
