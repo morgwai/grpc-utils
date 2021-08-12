@@ -51,54 +51,56 @@ public class ConcurrentRequestObserverTest {
 
 
 	void deliverNextRequest() {
-		int requestId = requestIdSequence.incrementAndGet();
-		if (requestId > numberOfRequests) return;
+		// exit if all requests have been already delivered
+		int currentId;
+		synchronized (listenerLock) {
+			currentId = requestIdSequence;
+			if (requestIdSequence >= numberOfRequests) return;
+		}
 
-		// deliver the next message asynchronously immediately or after a slight delay
+		// deliver the next message immediately or after a slight delay
 		if (maxRequestDeliveryDelayMillis > 0l) {
 			try {
-				Thread.sleep(requestId % (maxRequestDeliveryDelayMillis + 1));
+				Thread.sleep(currentId % (maxRequestDeliveryDelayMillis + 1));
 			} catch (InterruptedException e) {}
 		}
 
 		synchronized (listenerLock) {
-			requestObserver.onNext(new RequestMessage(requestId));
-		}
-
-		boolean allDelivered;
-		synchronized (this) {
-			allDelivered = (++deliveredRequestCount == numberOfRequests);
-		}
-		if (allDelivered) {
-			synchronized (listenerLock) {
+			var requestMessage = new RequestMessage(++requestIdSequence);
+			if (log.isLoggable(Level.FINER)) log.finer("delivering " + requestMessage);
+			requestObserver.onNext(requestMessage);
+			if (requestIdSequence == numberOfRequests) {
+				log.fine("half-closing");
 				requestObserver.onCompleted();
 			}
 		}
 	}
 
 	int numberOfRequests;
-	AtomicInteger requestIdSequence;
-	int deliveredRequestCount;
+	int requestIdSequence;
 	long maxRequestDeliveryDelayMillis;
 
 
 
 	@Before
 	public void setup() {
-		requestIdSequence = new AtomicInteger(0);
-		deliveredRequestCount = 0;
+		requestIdSequence = 0;
 		maxRequestDeliveryDelayMillis = 0l;
 		grpcInternalExecutor = new ThreadPoolExecutor(
 				10, 10, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
 		responseObserver.messageProducer =() -> deliverNextRequest();
 		listenerLock = responseObserver.getListenerLock();
-		requestObserver = new ConcurrentRequestObserver<>(
+		requestObserver = newConcurrentRequestObserver();
+	}
+
+	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
+			newConcurrentRequestObserver() {
+		return new ConcurrentRequestObserver<>(
 				responseObserver,
 				null,
 				(error) -> fail("unexpected call"));
 	}
-
 
 
 	@Test
@@ -110,7 +112,7 @@ public class ConcurrentRequestObserverTest {
 		};
 
 		synchronized (listenerLock) {
-			responseObserver.request(1);  // runs the test, everything happens in 1 thread
+			responseObserver.request(1);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100
@@ -165,7 +167,7 @@ public class ConcurrentRequestObserverTest {
 		numberOfRequests = 2;
 		Exception error = new Exception();
 		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			if (deliveredRequestCount > 1) {
+			if (requestMessage.id > 1) {
 				fail("no messages should be requested after an error");
 			}
 			individualObserver.onError(error);
@@ -238,6 +240,7 @@ public class ConcurrentRequestObserverTest {
 							new ResponseMessage(requestMessage.id));
 					individualObserver.onCompleted();
 					individualObserver.onCompleted();
+					exceptionThrownHolder[0] = false;
 				} catch (IllegalStateException e) {
 					exceptionThrownHolder[0] = true;
 				}
@@ -275,6 +278,7 @@ public class ConcurrentRequestObserverTest {
 							new ResponseMessage(requestMessage.id));
 					individualObserver.onCompleted();
 					individualObserver.onError(new Exception());;
+					exceptionThrownHolder[0] = false;
 				} catch (IllegalStateException e) {
 					exceptionThrownHolder[0] = true;
 				}
@@ -310,7 +314,7 @@ public class ConcurrentRequestObserverTest {
 		long halfProcessingDelay = maxProcessingDelayMillis / 2;
 
 		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			final AtomicInteger responseCount = new AtomicInteger(0);
+			final var responseCount = new AtomicInteger(0);
 			// produce each response asynchronously in about 1-3ms
 			for (int i = 0; i < responsesPerRequest; i++) {
 				try {

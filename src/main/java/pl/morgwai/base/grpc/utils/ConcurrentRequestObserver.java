@@ -178,13 +178,17 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	@Override
 	public void onNext(RequestT request) {
-		var individualObserver = new SingleRequestMessageResponseObserver();
+		var individualObserver = newSingleRequestMessageResponseObserver();
 		onRequest(request, individualObserver);
 		synchronized (individualObserver) {
 			if (individualObserver.onReadyHandler != null) {
 				individualObserver.onReadyHandler.run();
 			}
 		}
+	}
+
+	protected SingleRequestMessageResponseObserver newSingleRequestMessageResponseObserver() {
+		return new SingleRequestMessageResponseObserver();
 	}
 
 
