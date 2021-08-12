@@ -178,7 +178,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	@Override
 	public void onNext(RequestT request) {
-		var individualObserver = new SingleRequestMessageResponseObserver(request);
+		var individualObserver = new SingleRequestMessageResponseObserver();
 		onRequest(request, individualObserver);
 		synchronized (individualObserver) {
 			if (individualObserver.onReadyHandler != null) {
@@ -194,13 +194,11 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 */
 	class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
-		RequestT request;
 		Runnable onReadyHandler;
 
 
 
-		SingleRequestMessageResponseObserver(RequestT request) {
-			this.request = request;
+		SingleRequestMessageResponseObserver() {
 			synchronized (ConcurrentRequestObserver.this) {
 				ongoingRequests.add(this);
 			}
