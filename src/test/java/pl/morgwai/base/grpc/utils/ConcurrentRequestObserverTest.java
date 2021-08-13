@@ -10,6 +10,8 @@ import java.util.logging.Logger;
 
 import com.google.common.collect.Comparators;
 
+import io.grpc.stub.StreamObserver;
+
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -32,27 +34,15 @@ public class ConcurrentRequestObserverTest {
 
 
 
-	FakeResponseObserver<ResponseMessage> responseObserver;
-
 	/**
-	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
-	 * observer as ready, etc.
+	 * Simulates client delivering request messages. Controlled by adjusting values of the below
+	 * {@link #numberOfRequests} and {@link #maxRequestDeliveryDelayMillis} variables in test
+	 * methods.
 	 */
-	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
-
-	/**
-	 * This lock ensures that user's request observer will be called by at most 1 thread
-	 * concurrently, just as gRPC listener does. It is exposed for cases when user code simulates
-	 * gRPC listener behavior, usually when triggering a test.
-	 */
-	Object listenerLock;
-
-
-
-	void deliverNextRequest() {
+	void deliverNextRequest(StreamObserver<RequestMessage> requestObserver) {
 		// exit if all requests have been already delivered
 		int currentId;
-		synchronized (listenerLock) {
+		synchronized (deliveryLock) {
 			currentId = requestIdSequence;
 			if (requestIdSequence >= numberOfRequests) return;
 		}
@@ -64,7 +54,7 @@ public class ConcurrentRequestObserverTest {
 			} catch (InterruptedException e) {}
 		}
 
-		synchronized (listenerLock) {
+		synchronized (deliveryLock) {
 			if (requestIdSequence >= numberOfRequests) return;
 			var requestMessage = new RequestMessage(++requestIdSequence);
 			if (log.isLoggable(Level.FINER)) log.finer("delivering " + requestMessage);
@@ -76,9 +66,21 @@ public class ConcurrentRequestObserverTest {
 		}
 	}
 
-	int numberOfRequests;
+	int numberOfRequests;  // must be set in test methods
+	long maxRequestDeliveryDelayMillis;  // may be overridden in test methods
+	Object deliveryLock = new Object();
 	int requestIdSequence;
-	long maxRequestDeliveryDelayMillis;
+
+	FakeResponseObserver<ResponseMessage> responseObserver;
+
+	/**
+	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
+	 * observer as ready, etc.
+	 */
+	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+
+
+
 
 
 
@@ -88,9 +90,8 @@ public class ConcurrentRequestObserverTest {
 		maxRequestDeliveryDelayMillis = 0l;
 		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
-		responseObserver.messageProducer =() -> deliverNextRequest();
-		listenerLock = responseObserver.getListenerLock();
 		requestObserver = newConcurrentRequestObserver();
+		responseObserver.setBiDi(requestObserver, (observer)-> deliverNextRequest(observer));
 	}
 
 	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
@@ -110,9 +111,7 @@ public class ConcurrentRequestObserverTest {
 			individualObserver.onCompleted();
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);  // runs the test
-		}
+		responseObserver.request(1);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -141,9 +140,7 @@ public class ConcurrentRequestObserverTest {
 			individualObserver.onCompleted();
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);  // runs the test
-		}
+		responseObserver.request(1);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -172,9 +169,7 @@ public class ConcurrentRequestObserverTest {
 			individualObserver.onError(error);
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);
-		}
+		responseObserver.request(1);
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -209,9 +204,7 @@ public class ConcurrentRequestObserverTest {
 			}
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);
-		}
+		responseObserver.request(1);
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -247,9 +240,7 @@ public class ConcurrentRequestObserverTest {
 			}
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);
-		}
+		responseObserver.request(1);
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -285,9 +276,7 @@ public class ConcurrentRequestObserverTest {
 			}
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);
-		}
+		responseObserver.request(1);
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -329,9 +318,7 @@ public class ConcurrentRequestObserverTest {
 			}
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(concurrencyLevel);  // runs the test
-		}
+		responseObserver.request(concurrencyLevel);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -404,9 +391,7 @@ public class ConcurrentRequestObserverTest {
 			});
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);  // runs the test
-		}
+		responseObserver.request(1);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -453,9 +438,7 @@ public class ConcurrentRequestObserverTest {
 			));
 		};
 
-		synchronized (listenerLock) {
-			responseObserver.request(1);  // runs the test
-		}
+		responseObserver.request(1);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);

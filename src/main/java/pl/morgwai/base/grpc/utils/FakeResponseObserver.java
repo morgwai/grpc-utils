@@ -7,6 +7,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,7 +48,6 @@ public class FakeResponseObserver<ResponseT>
 	 * concurrently, just as gRPC listener does. It is exposed for cases when user code simulates
 	 * gRPC listener behavior, usually when triggering a test.
 	 */
-	public Object getListenerLock() { return listenerLock; }
 	Object listenerLock = new Object();
 
 
@@ -242,22 +242,58 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * Dispatched to {@link #grpcInternalExecutor} by {@link #request(int)} method.<br/>
-	 * It should usually call <code>requestObserver</code>'s {@link StreamObserver#onNext(Object)}
-	 * or {@link StreamObserver#onCompleted()} to simulate a client delivering request messages.
-	 * <br/>
-	 * Lambda instances are usually created in test methods to simulate specific client behavior.
-	 * <br/><br/>
-	 * <b>NOTE:</b><br/> all calls to {@code requestObserver} from within a {@code messageProducer}
-	 * must be synchronized on the {@link #getListenerLock() listenerLock}.
+	 * Configures this {@code FakeResponseObserver} to deliver request messages to the supplied
+	 * {@code requestObserver} (test subject) whenever {@link #request(int)} method is called. Sets
+	 * necessary synchronization between calls from {@code requestProducer} to
+	 * {@code requestObserver} and other parts of gRPC system to ensure obeying all concurrency
+	 * contracts.
+	 * @param requestObserver observer under test to which request messages should be delivered.
+	 * @param requestProducer dispatched to {@link #grpcInternalExecutor} whenever
+	 *        {@link #request(int)} method is called. It should usually call its argument's
+	 *        {@link StreamObserver#onNext(Object)} optionally followed by
+	 *        {@link StreamObserver#onCompleted()} or {@link StreamObserver#onError(Throwable)} to
+	 *        simulate a client behavior.
 	 */
-	public Runnable messageProducer;
+	@SuppressWarnings("unchecked")
+	<RequestT> void setBiDi(
+			StreamObserver<RequestT> requestObserver,
+			Consumer<StreamObserver<RequestT>> requestProducer) {
+		this.requestProducer = (Consumer<StreamObserver<?>>)(Object) requestProducer;
+		this.requestObserver = new StreamObserver<RequestT>() {
+
+			@Override
+			public void onNext(RequestT message) {
+				synchronized(listenerLock) {
+					requestObserver.onNext(message);
+				}
+			}
+
+			@Override
+			public void onError(Throwable error) {
+				synchronized(listenerLock) {
+					requestObserver.onError(error);
+				}
+			}
+
+			@Override
+			public void onCompleted() {
+				synchronized(listenerLock) {
+					requestObserver.onCompleted();
+				}
+			}
+		};
+	}
+
+	Consumer<StreamObserver<?>> requestProducer;
+	StreamObserver<?> requestObserver;
+
+
 
 	@Override
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
-		if (messageProducer != null) {
-			for (int i = 0; i < count; i++) grpcInternalExecutor.execute(messageProducer);
+		for (int i = 0; i < count; i++) {
+			grpcInternalExecutor.execute(() -> requestProducer.accept(requestObserver));
 		}
 	}
 
