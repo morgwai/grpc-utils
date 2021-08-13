@@ -15,8 +15,8 @@ import io.grpc.stub.StreamObserver;
 
 
 /**
- * A request <code>StreamObserver</code> for bi-di streaming methods that dispatch work to other
- * threads and don't need to preserve order of responses. Handles all the synchronization and manual
+ * A request <code>StreamObserver</code> for bi-di streaming methods that dispatch work to multiple
+ * threads and don't care about the order of responses. Handles all the synchronization and manual
  * flow control to maintain desired level of concurrency and prevent excessive buffering.<br/>
  * <br/>
  * After creating an observer, but before returning it from a method, a delivery of <code>n</code>

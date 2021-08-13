@@ -14,10 +14,11 @@ import io.grpc.stub.StreamObserver;
 
 
 /**
- * Handles message streaming to observer, while ensuring that no excessive response buffering
- * happens, in cases when message producing must be dispatched to an external executor.
- * Setting an instance as an <code>onReadyHandler</code> will eventually have similar effects as if
- * the below pseudo-code:
+ * Handles streaming messages to a {@link CallStreamObserver} from multiple threads with respect to
+ * flow-control to ensure that no excessive buffering occurs.
+ * Setting an instance using {@link CallStreamObserver#setOnReadyHandler(Runnable)
+ * setOnReadyHandler(dispatchingOnReadyHandler)} will eventually have similar effects as the below
+ * pseudo-code:
  * <pre>
  *for (int i = 0; i &lt; numberOfTasks; i++) taskExecutor.execute(() -&gt; {
  *    try {
@@ -31,9 +32,9 @@ import io.grpc.stub.StreamObserver;
  *    }
  *});
  * </pre>
- * However, the calls to streamObserver are properly synchronized and the work automatically
+ * However, calls to {@code streamObserver} are properly synchronized and the work is automatically
  * suspended/resumed whenever {@link #streamObserver} becomes unready/ready and executor's threads
- * are <b>released</b> whenever observer becomes unready.<br/>
+ * are <b>released</b> during time when observer is unready.<br/>
  * <br/>
  * Typical usage:
  * <pre>

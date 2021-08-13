@@ -14,8 +14,9 @@ import pl.morgwai.base.utils.OrderedConcurrentOutputBuffer.OutputStream;
 
 
 /**
- * A {@link ConcurrentRequestObserver} that uses {@link OrderedConcurrentOutputBuffer} to send
- * response messages in order corresponding to request messages order.<br/>
+ * A {@link ConcurrentRequestObserver} that uses {@link OrderedConcurrentOutputBuffer} to
+ * automatically ensure that response messages are sent in order corresponding to request messages
+ * order.<br/>
  * Note: as only responses to "head" request are sent directly to a client and rest is buffered,
  * the concurrency level (number of requests processed concurrently, determined by the initial
  * {@link CallStreamObserver#request(int)} call) should not be too big to avoid excessive buffer

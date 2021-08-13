@@ -17,8 +17,8 @@ import io.grpc.stub.StreamObserver;
 
 
 /**
- * Testing helper class. Helps to emulate behavior of a client and the gRPC system during server
- * side tests.
+ * A fake {@link ServerCallStreamObserver} testing helper class.
+ * Helps to emulate behavior of a client and the gRPC system during server side tests.
  */
 public class FakeResponseObserver<ResponseT>
 		extends ServerCallStreamObserver<ResponseT> {
@@ -247,6 +247,9 @@ public class FakeResponseObserver<ResponseT>
 	 * or {@link StreamObserver#onCompleted()} to simulate a client delivering request messages.
 	 * <br/>
 	 * Lambda instances are usually created in test methods to simulate specific client behavior.
+	 * <br/><br/>
+	 * <b>NOTE:</b><br/> all calls to {@code requestObserver} from within a {@code messageProducer}
+	 * must be synchronized on the {@link #getListenerLock() listenerLock}.
 	 */
 	public Runnable messageProducer;
 
