@@ -2,9 +2,6 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.Comparator;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.ConsoleHandler;
@@ -16,6 +13,8 @@ import com.google.common.collect.Comparators;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingThreadPoolExecutor;
 
 import static org.junit.Assert.*;
 
@@ -39,7 +38,7 @@ public class ConcurrentRequestObserverTest {
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
 	 * observer as ready, etc.
 	 */
-	ExecutorService grpcInternalExecutor;
+	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
 
 	/**
 	 * This lock ensures that user's request observer will be called by at most 1 thread
@@ -87,8 +86,7 @@ public class ConcurrentRequestObserverTest {
 	public void setup() {
 		requestIdSequence = 0;
 		maxRequestDeliveryDelayMillis = 0l;
-		grpcInternalExecutor = new ThreadPoolExecutor(
-				10, 10, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
 		responseObserver.messageProducer =() -> deliverNextRequest();
 		listenerLock = responseObserver.getListenerLock();
@@ -116,7 +114,7 @@ public class ConcurrentRequestObserverTest {
 			responseObserver.request(1);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -126,8 +124,8 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -137,7 +135,7 @@ public class ConcurrentRequestObserverTest {
 			throws InterruptedException {
 		numberOfRequests = 15;
 		responseObserver.outputBufferSize = 4;
-		responseObserver.unreadyDurationMillis = 3;
+		responseObserver.unreadyDurationMillis = 3l;
 		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			individualObserver.onNext(new ResponseMessage(requestMessage.id));
 			individualObserver.onCompleted();
@@ -147,7 +145,7 @@ public class ConcurrentRequestObserverTest {
 			responseObserver.request(1);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -157,8 +155,8 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -178,15 +176,15 @@ public class ConcurrentRequestObserverTest {
 			responseObserver.request(1);
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -217,15 +215,15 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -255,15 +253,15 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -293,15 +291,15 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of the executor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 	}
 
 
@@ -309,34 +307,25 @@ public class ConcurrentRequestObserverTest {
 	void testAsyncProcessing(
 			long maxProcessingDelayMillis, int responsesPerRequest, int concurrencyLevel)
 			throws InterruptedException {
-		ExecutorService userExecutor = new ThreadPoolExecutor(
-				concurrencyLevel, concurrencyLevel, 0, TimeUnit.DAYS, new LinkedBlockingQueue<>());
-		boolean[] executeAfterShutdownHolder = {false};
+		var userExecutor = new FailureTrackingThreadPoolExecutor(concurrencyLevel);
 		long halfProcessingDelay = maxProcessingDelayMillis / 2;
-
 		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
 			final var responseCount = new AtomicInteger(0);
 			// produce each response asynchronously in about 1-3ms
 			for (int i = 0; i < responsesPerRequest; i++) {
-				try {
-					userExecutor.execute(() -> {
-						// sleep time varies depending on request/response message counts
-						var processingDelay = halfProcessingDelay +
-								((requestMessage.id + responseCount.get()) % halfProcessingDelay);
-						try {
-							Thread.sleep(processingDelay);
-						} catch (InterruptedException e) {}
-						individualObserver.onNext(
-								new ResponseMessage(requestMessage.id));
-						if (responseCount.incrementAndGet() == responsesPerRequest) {
-							individualObserver.onCompleted();
-						}
-					});
-				} catch (Exception e) {
-					synchronized (executeAfterShutdownHolder) {
-						executeAfterShutdownHolder[0] = true;
+				userExecutor.execute(() -> {
+					// sleep time varies depending on request/response message counts
+					var processingDelay = halfProcessingDelay +
+							((requestMessage.id + responseCount.get()) % halfProcessingDelay);
+					try {
+						Thread.sleep(processingDelay);
+					} catch (InterruptedException e) {}
+					individualObserver.onNext(
+							new ResponseMessage(requestMessage.id));
+					if (responseCount.incrementAndGet() == responsesPerRequest) {
+						individualObserver.onCompleted();
 					}
-				}
+				});
 			}
 		};
 
@@ -344,7 +333,7 @@ public class ConcurrentRequestObserverTest {
 			responseObserver.request(concurrencyLevel);  // runs the test
 		}
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100
+		var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
@@ -356,13 +345,11 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no tasks should be executed after the shutdown of grpcExecutor",
-				responseObserver.getExecuteAfterShutdown());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		synchronized (executeAfterShutdownHolder) {
-			assertFalse("no tasks should be executed after the shutdown of userExecutor",
-					executeAfterShutdownHolder[0]);
-		}
+		assertFalse("no task scheduling failures should occur on userExecutor",
+				userExecutor.hadFailures());
 	}
 
 	@Test

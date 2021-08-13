@@ -3,7 +3,9 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.Executor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -27,18 +29,11 @@ public class FakeResponseObserver<ResponseT>
 	 * @param grpcInternalExecutor executor for gRPC internal tasks, such as marking response
 	 * observer as ready, delivering requested messages etc.
 	 */
-	public FakeResponseObserver(Executor grpcInternalExecutor) {
+	public FakeResponseObserver(FailureTrackingThreadPoolExecutor grpcInternalExecutor) {
 		this.grpcInternalExecutor = grpcInternalExecutor;
 	}
 
-	Executor grpcInternalExecutor;
-
-	/**
-	 * {@code true} if there were attempts to execute more tasks after {@link #grpcInternalExecutor}
-	 * was shutdown.
-	 */
-	public boolean getExecuteAfterShutdown() { return executeAfterShutdown; }
-	volatile boolean executeAfterShutdown = false;
+	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
 
 
 
@@ -93,11 +88,7 @@ public class FakeResponseObserver<ResponseT>
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
 				log.fine("response observer unready");
 				ready = false;
-				try {
-					grpcInternalExecutor.execute(() -> markObserverReady(unreadyDurationMillis));
-				} catch (Exception e) {
-					executeAfterShutdown = true;
-				}
+				grpcInternalExecutor.execute(() -> markObserverReady(unreadyDurationMillis));
 			}
 		} finally {
 			concurrencyGuard.unlock();
@@ -263,11 +254,7 @@ public class FakeResponseObserver<ResponseT>
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
 		if (messageProducer != null) {
-			try {
-				for (int i = 0; i < count; i++) grpcInternalExecutor.execute(messageProducer);
-			} catch (Exception e) {
-				executeAfterShutdown = true;
-			}
+			for (int i = 0; i < count; i++) grpcInternalExecutor.execute(messageProducer);
 		}
 	}
 
@@ -329,6 +316,38 @@ public class FakeResponseObserver<ResponseT>
 			throw new AssertionError("concurrency violation");
 		}
 		concurrencyGuard.unlock();
+	}
+
+
+
+	/**
+	 * Tracks task scheduling failures, occurring mainly on attempts to execute a task after
+	 * the executor was shutdown.
+	 */
+	public static class FailureTrackingThreadPoolExecutor extends ThreadPoolExecutor {
+
+
+
+		@Override
+		public void execute(Runnable command) {
+			try {
+				super.execute(command);
+			} catch (Exception e) {
+				failure = true;
+			}
+		}
+
+		/**
+		 * {@code true} if there were attempts to execute more tasks after shutdown.
+		 */
+		public boolean hadFailures() { return failure; }
+		volatile boolean failure = false;
+
+
+
+		public FailureTrackingThreadPoolExecutor(int poolSize) {
+			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+		}
 	}
 
 
