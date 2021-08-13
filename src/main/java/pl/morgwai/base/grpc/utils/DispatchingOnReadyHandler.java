@@ -92,12 +92,25 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		Consumer<Throwable> exceptionHandler,
 		Runnable cleanupHandler
 	) {
-		this(streamObserver, processingExecutor);
-		this.completionIndicator = completionIndicator;
-		this.messageProducer = messageProducer;
+		this(streamObserver, processingExecutor, completionIndicator, messageProducer);
 		this.exceptionHandler = exceptionHandler;
 		this.cleanupHandler = cleanupHandler;
 	}
+
+
+
+	public DispatchingOnReadyHandler(
+			CallStreamObserver<ResponseT> streamObserver,
+			Executor processingExecutor,
+			Callable<Boolean> completionIndicator,
+			Callable<ResponseT> messageProducer
+		) {
+			this(streamObserver, processingExecutor);
+			this.completionIndicator = completionIndicator;
+			this.messageProducer = messageProducer;
+		}
+
+
 
 	/**
 	 * Constructor for those who prefer to override {@link #isCompleted()},
@@ -134,7 +147,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	protected void handleException(Throwable error) {
-		exceptionHandler.accept(error);
+		if (exceptionHandler != null) exceptionHandler.accept(error);
 	}
 
 	protected Consumer<Throwable> exceptionHandler;
@@ -142,7 +155,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	protected void cleanup() {
-		cleanupHandler.run();
+		if (cleanupHandler != null) cleanupHandler.run();
 	}
 
 	protected Runnable cleanupHandler;

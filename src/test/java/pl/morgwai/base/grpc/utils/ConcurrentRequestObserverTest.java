@@ -449,9 +449,7 @@ public class ConcurrentRequestObserverTest {
 				() -> {
 					responseCountHolder[0]++;
 					return new ResponseMessage(requestMessage.id);
-				},
-				(error) -> {},
-				() -> {}
+				}
 			));
 		};
 
