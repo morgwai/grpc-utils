@@ -374,6 +374,112 @@ public class ConcurrentRequestObserverTest {
 
 
 
+	@Test
+	public void testIndividualOnReadyHandlerAreCalledProperly() throws InterruptedException {
+		var userExecutor = new FailureTrackingThreadPoolExecutor(5);
+		int[] handlerCallCounters = {0, 0};
+		numberOfRequests = 2;
+		int responsesPerRequest = 2;
+		responseObserver.outputBufferSize = numberOfRequests * responsesPerRequest - 1;
+		responseObserver.unreadyDurationMillis = 1l;
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
+			individualObserver.setOnReadyHandler(() -> {
+				handlerCallCounters[requestMessage.id - 1]++;
+				synchronized (individualObserver) {
+					individualObserver.notify();
+				}
+			});
+			userExecutor.execute(() -> {
+				for (int i = 0; i < responsesPerRequest; i ++) {
+					synchronized (individualObserver) {
+						while ( ! individualObserver.isReady()) {
+							try {
+								individualObserver.wait();
+							} catch (InterruptedException e) {}
+						}
+					}
+					individualObserver.onNext(new ResponseMessage(requestMessage.id));
+				}
+				individualObserver.onCompleted();
+			});
+		};
+
+		synchronized (listenerLock) {
+			responseObserver.request(1);  // runs the test
+		}
+		responseObserver.awaitFinalization(10_000l);
+		var executorShutdownTimeoutMillis = 100l
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		grpcInternalExecutor.shutdown();
+		userExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+
+		assertEquals("handler of and active observer should be called",
+				2, handlerCallCounters[1]);
+		assertEquals("handler of and finalized observer should not be called",
+				1, handlerCallCounters[0]);
+		assertEquals("correct number of messages should be written",
+				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
+		assertEquals("response should be marked completed 1 time",
+				1, responseObserver.getFinalizedCount());
+		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
+		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on userExecutor",
+				userExecutor.hadFailures());
+	}
+
+
+
+	@Test
+	public void testDispatchingOnReadyHandlerIntegration() throws InterruptedException {
+		var userExecutor = new FailureTrackingThreadPoolExecutor(5);
+		numberOfRequests = 10;
+		int responsesPerRequest = 10;
+		responseObserver.outputBufferSize = 6;
+		responseObserver.unreadyDurationMillis = 3l;
+		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
+			int[] responseCountHolder = {0};
+			individualObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+				individualObserver,
+				userExecutor,
+				() -> responseCountHolder[0] >= responsesPerRequest,
+				() -> {
+					responseCountHolder[0]++;
+					return new ResponseMessage(requestMessage.id);
+				},
+				(error) -> {},
+				() -> {}
+			));
+		};
+
+		synchronized (listenerLock) {
+			responseObserver.request(1);  // runs the test
+		}
+		responseObserver.awaitFinalization(10_000l);
+		var executorShutdownTimeoutMillis = 100l
+				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
+		grpcInternalExecutor.shutdown();
+		userExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+
+		assertEquals("correct number of messages should be written",
+				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
+		assertEquals("response should be marked completed 1 time",
+				1, responseObserver.getFinalizedCount());
+		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
+		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on userExecutor",
+				userExecutor.hadFailures());
+	}
+
+
+
 	static class RequestMessage {
 
 		int id;
