@@ -4,8 +4,12 @@ package pl.morgwai.base.grpc.utils;
 import java.io.FileNotFoundException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingThreadPoolExecutor;
@@ -34,8 +38,10 @@ public class DispatchingOnReadyHandlerTest {
 	FailureTrackingThreadPoolExecutor userExecutor;
 
 	int responseCount;
+	int[] responseCounters;
 	Throwable caughtError;
 	int cleanupCount;
+	int[] cleanupCounters;
 
 
 
@@ -52,7 +58,7 @@ public class DispatchingOnReadyHandlerTest {
 
 
 	@Test
-	public void testPositiveCase() throws InterruptedException {
+	public void testSingleThread() throws InterruptedException {
 		final var numberOfexpectedResponses = 10;
 		responseObserver.outputBufferSize = 3;
 		responseObserver.unreadyDurationMillis = 5l;
@@ -62,10 +68,16 @@ public class DispatchingOnReadyHandlerTest {
 			() -> responseCount >= numberOfexpectedResponses,
 			() -> ++responseCount,
 			(error) -> {
+				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				responseObserver.onError(error);
+				synchronized (handler) {
+					responseObserver.onError(error);
+				}
 			},
-			() -> cleanupCount++
+			() -> {
+				log.fine("cleanup");
+				cleanupCount++;
+			}
 		);
 		responseObserver.setOnReadyHandler(handler);
 
@@ -77,7 +89,7 @@ public class DispatchingOnReadyHandlerTest {
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
 
-		assertEquals("all messages should be written",
+		assertEquals("correct number of messages should be written",
 				numberOfexpectedResponses, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
@@ -94,7 +106,63 @@ public class DispatchingOnReadyHandlerTest {
 
 
 	@Test
-	public void testSecondHandlerwillNotSpawn() throws InterruptedException {
+	public void testMultiThread() throws InterruptedException {
+		final var numberOfexpectedResponsesPerThread = 5;
+		final var numberOfThreads = 5;
+		responseCounters = new int[numberOfThreads];
+		cleanupCounters = new int[numberOfThreads];
+		responseObserver.outputBufferSize = 3;
+		responseObserver.unreadyDurationMillis = 5l;
+		handler = new DispatchingOnReadyHandler<Integer>(
+			responseObserver,
+			userExecutor,
+			numberOfThreads,
+			(i) -> responseCounters[i] >= numberOfexpectedResponsesPerThread,
+			(i) -> ++responseCounters[i],
+			(i, error) -> {
+				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
+				caughtError = error;
+				synchronized (handler) {
+					responseObserver.onError(error);
+				}
+			},
+			(i) -> {
+				log.fine("cleanup");
+				cleanupCounters[i]++;
+			}
+		);
+		responseObserver.setOnReadyHandler(handler);
+
+		handler.run();
+		responseObserver.awaitFinalization(10_000l);
+		var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
+		grpcInternalExecutor.shutdown();
+		userExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+
+		assertEquals("correct number of messages should be written",
+				numberOfexpectedResponsesPerThread * numberOfThreads,
+				responseObserver.getOutputData().size());
+		assertEquals("response should be marked completed 1 time",
+				1, responseObserver.getFinalizedCount());
+		assertNull("no exception should be thrown", caughtError);
+		for (int i = 0; i < numberOfThreads; i++) {
+			assertEquals("cleanupHandler should be called 1 time for each thread (" + i + ')',
+					1, cleanupCounters[i]);
+		}
+		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.hadFailures());
+		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
+		assertFalse("no task scheduling failures should occur on userExecutor",
+				userExecutor.hadFailures());
+	}
+
+
+
+	@Test
+	public void testSecondHandlerIsNotSpawned() throws InterruptedException {
 		final var numberOfexpectedResponses = 10;
 		responseObserver.outputBufferSize = 3;
 		responseObserver.unreadyDurationMillis = 1l;
@@ -105,20 +173,28 @@ public class DispatchingOnReadyHandlerTest {
 			() -> responseCount >= numberOfexpectedResponses,
 			() -> {
 				if ( ! concurrencyGuard.tryLock()) {
-					caughtError = new AssertionError("another handler detected");
+					final var error =  new AssertionError("another handler detected");
+					caughtError = error;  // in case exception handling is also broken
+					throw error;
 				}
 				try {
-					Thread.sleep(5);
+					Thread.sleep(10l);
 				} finally {
 					concurrencyGuard.unlock();
 				}
 				return ++responseCount;
 			},
 			(error) -> {
+				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				responseObserver.onError(error);
+				synchronized (handler) {
+					responseObserver.onError(error);
+				}
 			},
-			() -> cleanupCount++
+			() -> {
+				log.fine("cleanup");
+				cleanupCount++;
+			}
 		);
 		responseObserver.setOnReadyHandler(handler);
 
@@ -131,11 +207,11 @@ public class DispatchingOnReadyHandlerTest {
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
 
-		assertEquals("all messages should be written",
+		assertNull("no exception should be thrown", caughtError);
+		assertEquals("correct number of messages should be written",
 				numberOfexpectedResponses, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertNull("no exception should be thrown", caughtError);
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
 		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
@@ -165,10 +241,16 @@ public class DispatchingOnReadyHandlerTest {
 				return ++responseCount;
 			},
 			(error) -> {
+				if (log.isLoggable(Level.FINE)) log.fine("exception " + error);
 				caughtError = error;
-				responseObserver.onError(error);
+				synchronized (handler) {
+					responseObserver.onError(error);
+				}
 			},
-			() -> cleanupCount++
+			() -> {
+				log.fine("cleanup");
+				cleanupCount++;
+			}
 		);
 		responseObserver.setOnReadyHandler(handler);
 
@@ -192,5 +274,28 @@ public class DispatchingOnReadyHandlerTest {
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
 		assertFalse("no task scheduling failures should occur on userExecutor",
 				userExecutor.hadFailures());
+	}
+
+
+
+	/**
+	 * Change the below value if you need logging:<br/>
+	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
+	 * <code>FINER</code> will log every message sent.<br/>
+	 * <code>FINEST</code> will log concurrency debug info.
+	 */
+	static final Level LOG_LEVEL = Level.OFF;
+
+	static final Logger log = Logger.getLogger(DispatchingOnReadyHandler.class.getName());
+
+	@BeforeClass
+	public static void setupLogging() {
+		var handler = new ConsoleHandler();
+		handler.setLevel(LOG_LEVEL);
+		log.addHandler(handler);
+		log.setLevel(LOG_LEVEL);
+		var responseObserverLog = FakeResponseObserver.getLogger();
+		responseObserverLog.addHandler(handler);
+		responseObserverLog.setLevel(LOG_LEVEL);
 	}
 }

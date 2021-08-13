@@ -3,9 +3,13 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.CallStreamObserver;
+import io.grpc.stub.StreamObserver;
 
 
 
@@ -13,39 +17,49 @@ import io.grpc.stub.CallStreamObserver;
  * Handles message streaming to observer, while ensuring that no excessive response buffering
  * happens, in cases when message producing must be dispatched to an external executor.
  * Setting an instance as an <code>onReadyHandler</code> will eventually have similar effects as if
- * the below code was dispatched to {@link #processingExecutor}:
+ * the below pseudo-code:
  * <pre>
- *try {
- *    while ( ! completionIndicator.call())
- *        streamObserver.onNext(messageProducer.call());
- *    streamObserver.onCompleted();
- *} catch (Throwable t) {
- *    exceptionHandler.accept(t);
- *} finally {
- *    cleanupHandler.run();
- *}
+ *for (int i = 0; i &lt; numberOfTasks; i++) taskExecutor.execute(() -&gt; {
+ *    try {
+ *        while ( ! completionIndicator.apply(i))
+ *            streamObserver.onNext(messageProducer.apply(i));
+ *        if (allTasksCompleted()) streamObserver.onCompleted();
+ *    } catch (Throwable t) {
+ *        exceptionHandler.accept(i, t);
+ *    } finally {
+ *        cleanupHandler.accept(i);
+ *    }
+ *});
  * </pre>
- * However, the work is automatically suspended/resumed whenever {@link #streamObserver} becomes
- * unready/ready and executor's thread is <b>released</b> whenever observer becomes unready.<br/>
+ * However, the calls to streamObserver are properly synchronized and the work automatically
+ * suspended/resumed whenever {@link #streamObserver} becomes unready/ready and executor's threads
+ * are <b>released</b> whenever observer becomes unready.<br/>
  * <br/>
  * Typical usage:
  * <pre>
  *public void myServerStreamingMethod(
  *        RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *    var state = new MyCallState(request);
+ *    var state = new MyCallState(request, NUMBER_OF_TASKS);
  *    var responseObserver =
  *            (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
  *    responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
- *    responseObserver.setOnReadyHandler(new DispatchingServerStreamingCallHandler&lt;&gt;(
+ *    final var handler = new DispatchingServerStreamingCallHandler&lt;&gt;(
  *        responseObserver,
- *        processingExecutor,
- *        () -&gt; state.isCompleted(),
- *        () -&gt; state.produceNextResponseMessage(),
- *        (Throwable t) -&gt; {
- *            if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
+ *        taskExecutor,
+ *        NUMBER_OF_TASKS,
+ *        (i) -&gt; state.isCompleted(i),
+ *        (i) -&gt; state.produceNextResponseMessage(i),
+ *        (i, error) -&gt; {
+ *            state.fail(error);
+ *            if ( ! (error instanceof StatusRuntimeException)) {
+ *                synchronized (handler) {
+ *                    responseObserver.onError(error);
+ *                }
+ *            }
  *        },
- *        () -&gt; state.cleanup()
- *    ));
+ *        (i) -&gt; state.cleanup(i)
+ *    );
+ *    responseObserver.setOnReadyHandler(handler);
  *}
  * </pre>
  * <br/>
@@ -84,91 +98,160 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
+	@FunctionalInterface
+	public static interface ThrowingFunction<ParamT, ResultT> {
+		ResultT apply(ParamT param) throws Exception;
+	}
+
+
+
+	/**
+	 * Constructs a "full-version" handler that includes handling exception thrown by
+	 * {@link #completionIndicator} and {@link #messageProducer}. If {@link #exceptionHandler}
+	 * calls {@link StreamObserver#onError(Throwable) streamObserver.onError(error)}, it must be
+	 * synchronized on this {@code DispatchingOnReadyHandler} instance.
+	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
-		Executor processingExecutor,
-		Callable<Boolean> completionIndicator,
-		Callable<ResponseT> messageProducer,
-		Consumer<Throwable> exceptionHandler,
-		Runnable cleanupHandler
+		Executor taskExecutor,
+		int numberOfTasks,
+		ThrowingFunction<Integer, Boolean> completionIndicator,
+		ThrowingFunction<Integer, ResponseT> messageProducer,
+		BiConsumer<Integer, Throwable> exceptionHandler,
+		Consumer<Integer> cleanupHandler
 	) {
-		this(streamObserver, processingExecutor, completionIndicator, messageProducer);
+		this(streamObserver, taskExecutor, numberOfTasks,
+				completionIndicator, messageProducer);
 		this.exceptionHandler = exceptionHandler;
 		this.cleanupHandler = cleanupHandler;
 	}
 
 
 
+	/**
+	 * Constructs a handler for "no-exception" case. {@link #completionIndicator} and
+	 * {@link #messageProducer} may only throw {@link StatusRuntimeException}.
+	 */
 	public DispatchingOnReadyHandler(
-			CallStreamObserver<ResponseT> streamObserver,
-			Executor processingExecutor,
-			Callable<Boolean> completionIndicator,
-			Callable<ResponseT> messageProducer
-		) {
-			this(streamObserver, processingExecutor);
-			this.completionIndicator = completionIndicator;
-			this.messageProducer = messageProducer;
-		}
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		ThrowingFunction<Integer, Boolean> completionIndicator,
+		ThrowingFunction<Integer, ResponseT> messageProducer
+	) {
+		this(streamObserver, taskExecutor, numberOfTasks);
+		this.completionIndicator = completionIndicator;
+		this.messageProducer = messageProducer;
+	}
 
 
 
 	/**
-	 * Constructor for those who prefer to override {@link #isCompleted()},
-	 * {@link #produceMessage()}, {@link #handleException(Throwable)} and {@link #cleanup()} in a
-	 * subclass instead of providing lambdas.
+	 * Constructs a handler for "no-exception single-thread" case. {@link #completionIndicator} and
+	 * {@link #messageProducer} may only throw {@link StatusRuntimeException}.
+	 */
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Callable<Boolean> completionIndicator,
+		Callable<ResponseT> messageProducer
+	) {
+		this(streamObserver, taskExecutor, 1);
+		this.completionIndicator = (i) -> completionIndicator.call();
+		this.messageProducer = (i) -> messageProducer.call();
+	}
+
+
+
+	/**
+	 * Constructs a handler for "single-thread" case that includes handling exception thrown by
+	 * {@link #completionIndicator} and {@link #messageProducer}. Unlike in
+	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
+	 * ThrowingFunction, BiConsumer, Consumer) the multithreaded version}, calls to
+	 * {@link StreamObserver#onError(Throwable) streamObserver.onError(error)} in
+	 * {@link #exceptionHandler} don't need to be synchronized, but it's still recommended to avoid
+	 * mistakes.
+	 */
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Callable<Boolean> completionIndicator,
+		Callable<ResponseT> messageProducer,
+		Consumer<Throwable> exceptionHandler,
+		Runnable cleanupHandler
+	) {
+		this(streamObserver, taskExecutor, completionIndicator, messageProducer);
+		this.exceptionHandler = (i, error) -> exceptionHandler.accept(error);
+		this.cleanupHandler = (i) -> cleanupHandler.run();
+	}
+
+
+
+	/**
+	 * Constructor for those who prefer to override {@link #isCompleted(int)},
+	 * {@link #produceMessage(int)}, {@link #handleException(int, Throwable)} and
+	 * {@link #cleanup(int)} in a subclass instead of providing lambdas.
 	 */
 	protected DispatchingOnReadyHandler(
-			CallStreamObserver<ResponseT> streamObserver,
-			Executor processingExecutor
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks
 	) {
 		this.streamObserver = streamObserver;
-		this.processingExecutor = processingExecutor;
+		this.taskExecutor = taskExecutor;
+		this.numberOfTasks = numberOfTasks;
+		completionCount = new AtomicInteger(0);
+		taskInProgress = new boolean[numberOfTasks];
 	}
 
 	CallStreamObserver<ResponseT> streamObserver;
-	Executor processingExecutor;
+	Executor taskExecutor;
+	int numberOfTasks;
+	AtomicInteger completionCount;
+	boolean[] taskInProgress;
 
 
 
-	protected boolean isCompleted() throws Exception {
-		return completionIndicator.call();
+	protected boolean isCompleted(int i) throws Exception {
+		return completionIndicator.apply(i);
 	}
 
-	protected Callable<Boolean> completionIndicator;
+	protected ThrowingFunction<Integer, Boolean> completionIndicator;
 
 
 
-	protected ResponseT produceMessage() throws Exception {
-		return messageProducer.call();
+	protected ResponseT produceMessage(int i) throws Exception {
+		return messageProducer.apply(i);
 	}
 
-	protected Callable<ResponseT> messageProducer;
+	protected ThrowingFunction<Integer, ResponseT> messageProducer;
 
 
 
-	protected void handleException(Throwable error) {
-		if (exceptionHandler != null) exceptionHandler.accept(error);
+	protected void handleException(int i, Throwable error) {
+		if (exceptionHandler != null) exceptionHandler.accept(i, error);
 	}
 
-	protected Consumer<Throwable> exceptionHandler;
+	protected BiConsumer<Integer, Throwable> exceptionHandler;
 
 
 
-	protected void cleanup() {
-		if (cleanupHandler != null) cleanupHandler.run();
+	protected void cleanup(int i) {
+		if (cleanupHandler != null) cleanupHandler.accept(i);
 	}
 
-	protected Runnable cleanupHandler;
+	protected Consumer<Integer> cleanupHandler;
 
 
 
 	public synchronized void run() {
-		if (processingInProgress) return;
-		processingInProgress = true;
-		processingExecutor.execute(() -> handleSingleReadinessCycle());
+		for (int i = 0; i < numberOfTasks; i++) {
+			if (taskInProgress[i]) continue;
+			taskInProgress[i] = true;
+			final var threadNumber = Integer.valueOf(i);
+			taskExecutor.execute(() -> handleSingleReadinessCycle(threadNumber));
+		}
 	}
-
-	boolean processingInProgress = false;
 
 
 
@@ -176,29 +259,32 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Handles 1 cycle of {@link #responseObserver}'s readiness.<br/>
 	 * <br/>
 	 * Note: it may actually happen that {@link #responseObserver} will change its state from
-	 * unready to ready very fast, before the handler can even notice. In such case the handler will
-	 * span over more than 1 cycle. {@link #processingInProgress} flag prevents {@link #handle()}
-	 * spawning another handler in such case.
+	 * unready to ready very fast, before some tasks can even notice. In such case this method will
+	 * span over more than 1 cycle. {@link #taskInProgress} flags prevent spawning extra tasks
+	 * in such case.
 	 */
-	void handleSingleReadinessCycle() {
+	void handleSingleReadinessCycle(Integer threadNumber) {
 		var ready = true;
 		try {
-			ready = isReady();
-			while (ready && ! isCompleted()) {
-				streamObserver.onNext(produceMessage());
-				ready = isReady();
+			synchronized (this) {
+				ready = streamObserver.isReady();
+				if ( ! ready) taskInProgress[threadNumber] = false;;
 			}
-			if (ready) streamObserver.onCompleted();
-		} catch (Throwable t) {
-			handleException(t);;
+			while (ready && ! isCompleted(threadNumber)) {
+				final var responseMessage = produceMessage(threadNumber);
+				synchronized (this) {
+					streamObserver.onNext(responseMessage);
+					ready = streamObserver.isReady();
+					if ( ! ready) taskInProgress[threadNumber] = false;;
+				}
+			}
+			if (ready && completionCount.incrementAndGet() == numberOfTasks) {
+				streamObserver.onCompleted();
+			}
+		} catch (Throwable throwable) {
+			handleException(threadNumber, throwable);
 		} finally {
-			if (ready) cleanup();
+			if (ready) cleanup(threadNumber);
 		}
-	}
-
-	synchronized boolean isReady() {
-		if (streamObserver.isReady()) return true;
-		processingInProgress = false;
-		return false;
 	}
 }
