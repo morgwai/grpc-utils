@@ -19,7 +19,26 @@ import io.grpc.stub.StreamObserver;
 
 /**
  * A fake {@link ServerCallStreamObserver} testing helper class.
- * Helps to emulate behavior of a client and the gRPC system during server side tests.
+ * Helps to emulate behavior of a client and the gRPC system in server-side infrastructure code
+ * tests.<br/>
+ * <br/>
+ * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
+ * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.<br/>
+ * <br/>
+ * Usage:<ol>
+ *   <li>Configure observer's readiness can be controlled by adjusting {@link #outputBufferSize} and
+ *     {@link #unreadyDurationMillis} variables.</li>
+ *   <li>Pass the observer to your gRPC method under test.</li>
+ *   <li>For BiDi, a message producer and a request observer obtained from the method under test
+ *     must be supplied using {@link #setBiDi(StreamObserver, Consumer)} method.<br/>
+ *     Client canceling a call can be simulated using {@link #cancel()} method.</li>
+ *   <li>If the method under test dispatches work to other threads, {@link #awaitFinalization(long)}
+ *     can be used to wait until {@link #onCompleted()} or {@link #onError(Throwable)} is called.
+ *     </li>
+ *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
+ *     {@link #getReportedError()} methods and by shutting down and inspecting
+ *     {@link FailureTrackingThreadPoolExecutor} supplied to the constructor.</li>
+ * </ol>
  */
 public class FakeResponseObserver<ResponseT>
 		extends ServerCallStreamObserver<ResponseT> {
@@ -39,20 +58,6 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * Verifies that at most 1 thread calls this observer's methods concurrently.
-	 */
-	LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
-
-	/**
-	 * This lock ensures that user's request observer will be called by at most 1 thread
-	 * concurrently, just as gRPC listener does. It is exposed for cases when user code simulates
-	 * gRPC listener behavior, usually when triggering a test.
-	 */
-	Object listenerLock = new Object();
-
-
-
-	/**
 	 * List of arguments of calls to {@link #onNext(Object)}.
 	 */
 	public List<ResponseT> getOutputData() { return outputData; }
@@ -68,6 +73,18 @@ public class FakeResponseObserver<ResponseT>
 	 * Duration for which observer will be unready. By default 1ms.
 	 */
 	public volatile long unreadyDurationMillis = 1l;
+
+
+
+	/**
+	 * Verifies that at most 1 thread calls this observer's methods concurrently.
+	 */
+	LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
+
+	/**
+	 * Ensures that user's request observer will be called by at most 1 thread concurrently.
+	 */
+	Object listenerLock = new Object();
 
 
 
@@ -282,6 +299,7 @@ public class FakeResponseObserver<ResponseT>
 				}
 			}
 		};
+		request(accumulatedMessageRequestCount);
 	}
 
 	Consumer<StreamObserver<?>> requestProducer;
@@ -292,10 +310,16 @@ public class FakeResponseObserver<ResponseT>
 	@Override
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
-		for (int i = 0; i < count; i++) {
-			grpcInternalExecutor.execute(() -> requestProducer.accept(requestObserver));
+		if (requestProducer != null) {
+			for (int i = 0; i < count; i++) {
+				grpcInternalExecutor.execute(() -> requestProducer.accept(requestObserver));
+			}
+		} else {
+			accumulatedMessageRequestCount += count;
 		}
 	}
+
+	int accumulatedMessageRequestCount = 0;
 
 
 
@@ -375,6 +399,8 @@ public class FakeResponseObserver<ResponseT>
 				failure = true;
 			}
 		}
+
+
 
 		/**
 		 * {@code true} if there were attempts to execute more tasks after shutdown.
