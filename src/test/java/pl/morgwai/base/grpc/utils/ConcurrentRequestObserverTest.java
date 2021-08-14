@@ -32,6 +32,9 @@ public class ConcurrentRequestObserverTest {
 	 */
 	ConcurrentRequestObserver<RequestMessage, ResponseMessage> requestObserver;
 
+	FakeResponseObserver<ResponseMessage> responseObserver;
+	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+
 
 
 	/**
@@ -68,19 +71,8 @@ public class ConcurrentRequestObserverTest {
 
 	int numberOfRequests;  // must be set in test methods
 	long maxRequestDeliveryDelayMillis;  // may be overridden in test methods
-	final Object deliveryLock = new Object();
 	int requestIdSequence;
-
-	FakeResponseObserver<ResponseMessage> responseObserver;
-
-	/**
-	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
-	 * observer as ready, etc.
-	 */
-	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
-
-
-
+	final Object deliveryLock = new Object();
 
 
 
@@ -98,9 +90,10 @@ public class ConcurrentRequestObserverTest {
 			newConcurrentRequestObserver() {
 		return new ConcurrentRequestObserver<>(
 				responseObserver,
-				null,
+				null,  // set by test methods
 				(error) -> fail("unexpected call"));
 	}
+
 
 
 	@Test

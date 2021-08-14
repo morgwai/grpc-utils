@@ -274,8 +274,8 @@ public class FakeResponseObserver<ResponseT>
 	@SuppressWarnings("unchecked")
 	<RequestT> void setBiDi(
 			StreamObserver<RequestT> requestObserver,
-			Consumer<StreamObserver<RequestT>> requestProducer) {
-		this.requestProducer = (Consumer<StreamObserver<?>>)(Object) requestProducer;
+			Consumer<? extends StreamObserver<RequestT>> requestProducer) {
+		this.requestProducer = (Consumer<StreamObserver<?>>) requestProducer;
 		this.requestObserver = new StreamObserver<RequestT>() {
 
 			@Override
@@ -328,7 +328,7 @@ public class FakeResponseObserver<ResponseT>
 	 */
 	public void cancel() {
 		synchronized (listenerLock) {
-			cancelled = true;
+			cancelled = true;  // TODO: verify if it should be in- or out-side of synchronized block
 			if (onCancelHandler != null) onCancelHandler.run();
 		}
 	}
