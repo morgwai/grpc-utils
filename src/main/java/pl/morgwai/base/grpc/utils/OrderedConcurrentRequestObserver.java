@@ -65,7 +65,7 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 		});
 	}
 
-	OrderedConcurrentOutputBuffer<ResponseT> buffer;
+	final OrderedConcurrentOutputBuffer<ResponseT> buffer;
 	volatile boolean error = false;
 
 
@@ -79,7 +79,7 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 	class BucketResponseObserver extends SingleRequestMessageResponseObserver {
 
-		OrderedConcurrentOutputBuffer<ResponseT>.Bucket bucket;
+		final OrderedConcurrentOutputBuffer<ResponseT>.Bucket bucket;
 
 
 

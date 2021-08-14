@@ -53,7 +53,7 @@ public class FakeResponseObserver<ResponseT>
 		this.grpcInternalExecutor = grpcInternalExecutor;
 	}
 
-	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+	final FailureTrackingThreadPoolExecutor grpcInternalExecutor;
 
 
 
@@ -61,7 +61,7 @@ public class FakeResponseObserver<ResponseT>
 	 * List of arguments of calls to {@link #onNext(Object)}.
 	 */
 	public List<ResponseT> getOutputData() { return outputData; }
-	List<ResponseT> outputData = new LinkedList<>();
+	final List<ResponseT> outputData = new LinkedList<>();
 
 	/**
 	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
@@ -79,12 +79,12 @@ public class FakeResponseObserver<ResponseT>
 	/**
 	 * Verifies that at most 1 thread calls this observer's methods concurrently.
 	 */
-	LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
+	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
 
 	/**
 	 * Ensures that user's request observer will be called by at most 1 thread concurrently.
 	 */
-	Object listenerLock = new Object();
+	final Object listenerLock = new Object();
 
 
 
@@ -169,7 +169,7 @@ public class FakeResponseObserver<ResponseT>
 		}
 	}
 
-	Object finalizationGuard = new Object();
+	final Object finalizationGuard = new Object();
 
 
 

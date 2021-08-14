@@ -138,7 +138,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	boolean halfClosed = false;
 	int joblessThreadCount = 0;
-	Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
+	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
 
 
@@ -178,7 +178,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	@Override
 	public void onNext(RequestT request) {
-		var individualObserver = newSingleRequestMessageResponseObserver();
+		final var individualObserver = newSingleRequestMessageResponseObserver();
 		onRequest(request, individualObserver);
 		synchronized (individualObserver) {
 			if (individualObserver.onReadyHandler != null) {

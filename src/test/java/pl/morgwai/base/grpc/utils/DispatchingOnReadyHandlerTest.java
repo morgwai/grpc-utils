@@ -83,7 +83,7 @@ public class DispatchingOnReadyHandlerTest {
 
 		handler.run();
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
+		final var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -135,7 +135,7 @@ public class DispatchingOnReadyHandlerTest {
 
 		handler.run();
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
+		final var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -201,7 +201,7 @@ public class DispatchingOnReadyHandlerTest {
 		handler.run();
 		handler.run();
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
+		final var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -256,7 +256,7 @@ public class DispatchingOnReadyHandlerTest {
 
 		handler.run();
 		responseObserver.awaitFinalization(10_000l);
-		var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
+		final var executorShutdownTimeoutMillis = 100l + responseObserver.unreadyDurationMillis;
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
