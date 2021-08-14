@@ -29,4 +29,13 @@ public class OrderedConcurrentRequestObserverTest extends ConcurrentRequestObser
 		assertTrue("messages should be written in order",
 				Comparators.isInOrder(responseObserver.getOutputData(), responseComparator));
 	}
+
+
+
+	@Override
+	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
+		super.testDispatchingOnReadyHandlerIntegrationMultiThread();
+		assertTrue("messages should be written in order",
+				Comparators.isInOrder(responseObserver.getOutputData(), responseComparator));
+	}
 }
