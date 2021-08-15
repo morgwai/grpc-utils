@@ -95,7 +95,7 @@ public class FakeResponseObserver<ResponseT>
 		}
 		try {
 			if (log.isLoggable(Level.FINER)) log.finer("response sent: " + message);
-			if (cancelled) throw Status.CANCELLED.asRuntimeException();
+			if (cancelled && onCancelHandler == null) throw Status.CANCELLED.asRuntimeException();
 			// TODO: some other methods probably should check cancel state also:
 			// verify which ones and fix it.
 
