@@ -79,11 +79,11 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 	class BucketResponseObserver extends SingleRequestMessageResponseObserver {
 
-		final OrderedConcurrentOutputBuffer<ResponseT>.Bucket bucket;
+		final OutputStream<ResponseT> bucket;
 
 
 
-		BucketResponseObserver(OrderedConcurrentOutputBuffer<ResponseT>.Bucket bucket) {
+		BucketResponseObserver(OutputStream<ResponseT> bucket) {
 			this.bucket = bucket;
 		}
 
