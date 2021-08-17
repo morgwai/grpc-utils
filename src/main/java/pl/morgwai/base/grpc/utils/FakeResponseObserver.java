@@ -94,11 +94,12 @@ public class FakeResponseObserver<ResponseT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
-			if (log.isLoggable(Level.FINER)) log.finer("response sent: " + message);
+			// Currently, the behavior of "the real" responseObserver is inconsistent and depends
+			// on which thread onNext() is called on.
+			// See https://github.com/grpc/grpc-java/issues/8409
 			if (cancelled && onCancelHandler == null) throw Status.CANCELLED.asRuntimeException();
-			// TODO: some other methods probably should check cancel state also:
-			// verify which ones and fix it.
 
+			if (log.isLoggable(Level.FINER)) log.finer("response sent: " + message);
 			outputData.add(message);
 
 			// mark observer unready and schedule becoming ready again
@@ -327,22 +328,15 @@ public class FakeResponseObserver<ResponseT>
 	 * Simulates client canceling a call by a client.
 	 */
 	public void cancel() {
+		cancelled = true;
 		synchronized (listenerLock) {
-			cancelled = true;  // TODO: verify if it should be in- or out-side of synchronized block
 			if (onCancelHandler != null) onCancelHandler.run();
 		}
 	}
 
 	@Override
 	public boolean isCancelled() {
-		if ( ! concurrencyGuard.tryLock("isCancelled")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			return cancelled;
-		} finally {
-			concurrencyGuard.unlock();
-		}
+		return cancelled;
 	}
 
 	volatile boolean cancelled = false;
