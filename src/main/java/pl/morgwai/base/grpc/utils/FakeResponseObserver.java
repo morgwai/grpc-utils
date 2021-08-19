@@ -275,8 +275,8 @@ public class FakeResponseObserver<ResponseT>
 	@SuppressWarnings("unchecked")
 	<RequestT> void setBiDi(
 			StreamObserver<RequestT> requestObserver,
-			Consumer<? extends StreamObserver<RequestT>> requestProducer) {
-		this.requestProducer = (Consumer<StreamObserver<?>>) requestProducer;
+			Consumer<StreamObserver<RequestT>> requestProducer) {
+		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) requestProducer;
 		this.requestObserver = new StreamObserver<RequestT>() {
 
 			@Override
