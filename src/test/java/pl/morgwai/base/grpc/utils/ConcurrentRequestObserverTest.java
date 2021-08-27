@@ -450,7 +450,9 @@ public class ConcurrentRequestObserverTest {
 					if (halfProcessingDelay > 0) {
 						final var processingDelay = halfProcessingDelay +
 								((requestMessage.id + responseCounters[i]) % halfProcessingDelay);
-						Thread.sleep(processingDelay);
+						try {
+							Thread.sleep(processingDelay);
+						} catch (InterruptedException e) {}
 					}
 					responseCounters[i]++;
 					return new ResponseMessage(requestMessage.id);
