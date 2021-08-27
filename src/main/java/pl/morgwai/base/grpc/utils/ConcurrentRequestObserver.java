@@ -11,23 +11,25 @@ import java.util.function.Consumer;
 import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
+import io.grpc.stub.StreamObservers;
 
 
 
 /**
  * A request <code>StreamObserver</code> for bi-di streaming methods that dispatch work to multiple
  * threads and don't care about the order of responses. Handles all the synchronization and manual
- * flow control to maintain desired level of concurrency and prevent excessive buffering.<br/>
- * <br/>
- * After creating an observer, but before returning it from a method, a delivery of <code>n</code>
- * request messages should be requested via {@link io.grpc.stub.CallStreamObserver#request(int)
- * responseObserver.request(n)} method, where <code>n</code> is the desired level of concurrency,
- * usually the size of a threadPool to which {@link #onRequest(Object, CallStreamObserver)}
- * dispatches work. From then on, the observer will maintain this number of request messages being
- * concurrently processed, as long as the client can deliver them and consume responses on time and
- * no one else occupies the threadPool.<br/>
- * For example:<br/>
- * <br/>
+ * flow control to maintain desired level of concurrency and prevent excessive buffering.
+ * <p>
+ * Before returning a {@code ConcurrentRequestObserver} from a gRPC method, a delivery of
+ * <code>n</code> request messages should be requested via
+ * {@link io.grpc.stub.CallStreamObserver#request(int) responseObserver.request(n)} method,
+ * where <code>n</code> is the desired level of concurrency (usually the size of the threadPool to
+ * which {@link #onRequest(Object, CallStreamObserver)} dispatches work, divided by the number of
+ * tasks it creates).<br/>
+ * From then on, the observer will maintain this number of request messages being
+ * concurrently processed (as long as the client can deliver them and consume responses on time and
+ * no one else occupies the threadPool).</p>
+ * <p>For example:
  * <pre>
  *public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
  *        StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
@@ -49,13 +51,13 @@ import io.grpc.stub.StreamObserver;
  *    responseObserver.request(10);  // 10 is the size of executor's threadPool
  *    return requestObserver;
  *}
- * </pre>
- * If <code>1</code> is requested initially, then although handled asynchronously by executor
- * threads, request messages will be handled sequentially and thus the order of response messages
- * will correspond to request messages.<br/>
- * <br/>
+ * </pre></p>
+ * <p>
+ * If <code>1</code> is requested initially, then request messages will be handled sequentially and
+ * thus the order of response messages will correspond to request messages.</p>
+ * <p>
  * Once response observers for all request messages are closed and the client closes his request
- * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.
+ * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.</p>
  */
 public class ConcurrentRequestObserver<RequestT, ResponseT>
 		implements StreamObserver<RequestT> {
@@ -63,19 +65,34 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Produces response messages to a given <code>requestMessage</code> and submits them to the
-	 * {@code singleRequestMessageResponseObserver} (associated with the given
-	 * {@code requestMessage}).<br/>
-	 * Work may be freely dispatched to several other threads. Once all response messages to a
-	 * a given <code>requestMessage</code> are submitted via {@code onNext(reply)} method,
-	 * <code>singleRequestMessageResponseObserver.onComplete()</code> must be called to signal to
-	 * this <code>ConcurrentRequestObserver</code> that no more response messages will be produced
-	 * for this <code>requestMessage</code> and that the next one may be requested from the client
-	 * (assuming server's output buffer is not too full).<br/>
-	 * <br/>
-	 * This implementation calls {@link #requestHandler} supplied via the param of
+	 * Produces response messages to the given <code>requestMessage</code> and submits them to the
+	 * {@code singleRequestMessageResponseObserver} (associated with this {@code requestMessage}).
+	 * Implementations of this method may freely dispatch work to several other threads and
+	 * {@code singleRequestMessageResponseObserver} is thread-safe.<br/>
+	 * Once all response messages to the given <code>requestMessage</code> are submitted,
+	 * <code>singleRequestMessageResponseObserver.onComplete()</code> must be called.
+	 * <p>
+	 * Implementations that produce several response messages should respect
+	 * {@code singleRequestMessageResponseObserver}'s readiness with
+	 * {@code singleRequestMessageResponseObserver.isReady()} and
+	 * {@code singleRequestMessageResponseObserver.setOnReadyHandler(...)} methods to avoid
+	 * excessive buffering: consider using {@link DispatchingOnReadyHandler} or
+	 * {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}.</p>
+	 * <p>
+	 * {@code singleRequestMessageResponseObserver.disableAutoInboundFlowControl()},
+	 * {@code singleRequestMessageResponseObserver.request(...)} have no effect: request messages
+	 * are requested automatically by the parent {@code ConcurrentRequestObserver}.</p>
+	 * <p>
+	 * {@code singleRequestMessageResponseObserver.onError(...)} will call
+	 * {@link #onError(Throwable)} from the parent response observer (supplied via
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver) constructor} param).</p>
+	 * <p>
+	 * {@code singleRequestMessageResponseObserver.setMessageCompression()} has no effect:
+	 * compression should be set using the parent response observer.</p>
+	 * <p>
+	 * Default implementation of this method calls {@link #requestHandler} supplied via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
-	 * constructor.
+	 * constructor.</p>
 	 */
 	protected void onRequest(
 			RequestT requestMessage,
@@ -89,7 +106,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 
 	/**
 	 * See {@link StreamObserver#onError(Throwable)} for details.
-	 * This implementation calls {@link #errorHandler} supplied via the param of
+	 * Default implementation calls {@link #errorHandler} supplied via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
 	 * constructor.
 	 */
@@ -106,9 +123,9 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * Creates an observer and enables manual flow control to maintain the desired concurrency
 	 * level while also preventing excessive buffering of response messages.
 	 *
-	 * @param responseObserver
-	 * @param requestHandler lambda called by {@link #onRequest(Object, CallStreamObserver)}
-	 * @param errorHandler lambda called by {@link #onError(Throwable)}
+	 * @param responseObserver response observer of the given gRPC method.
+	 * @param requestHandler lambda called by {@link #onRequest(Object, CallStreamObserver)}.
+	 * @param errorHandler lambda called by {@link #onError(Throwable)}.
 	 */
 	public ConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
