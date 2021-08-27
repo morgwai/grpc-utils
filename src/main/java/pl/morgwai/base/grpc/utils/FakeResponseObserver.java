@@ -127,7 +127,7 @@ public class FakeResponseObserver<ResponseT>
 			if ( ! ready) {
 				log.fine("response observer ready");
 				ready = true;
-				onReadyHandler.run();
+				if (onReadyHandler != null) onReadyHandler.run();
 			}
 		}
 	}
