@@ -9,7 +9,8 @@ import io.grpc.stub.StreamObserver;
 
 /**
  * Response observer for a client side that blocks until response is completed with either
- * <code>onCompleted()</code> or <code>onError(error)</code>.
+ * {@link #onCompleted()} or {@link #onError(Throwable)}.
+ * <p>
  * Typical usage:
  * <pre>
  *var responseObserver = new BlockingResponseObserver&lt;ResponseMessage&gt;(response -&gt; {
@@ -24,7 +25,7 @@ import io.grpc.stub.StreamObserver;
  *    Throwable reportedError = e.getCause();
  *    // handle error that was reported via onError(reportedError) here...
  *}
- * </pre>
+ * </pre></p>
  */
 public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
@@ -52,29 +53,30 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 	/**
-	 * Awaits up to <code>timeoutMillis</code> for the response to be completed with
-	 * {@link #onCompleted()}. Whether timeout passed or response was completed can be verified
-	 * with {@link #isCompleted()}. If <code>timeoutMillis</code> is <code>0l</code> then waits
-	 * indefinitely.
-	 * @throws InterruptedException if this thread gets interrupted.
+	 * Awaits up to <code>timeoutMillis</code> for {@link #onCompleted()} or
+	 * {@link #onError(Throwable)} to be called.
+	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
 	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
 	 *     <code>getCause()</code> will return the throwable passed as argument.
 	 */
-	public synchronized void awaitCompletion(long timeoutMillis)
+	public synchronized boolean awaitCompletion(long timeoutMillis)
 			throws ErrorReportedException, InterruptedException {
 		if (timeoutMillis == 0l) {
 			while ( ! completed) wait();
-		} else 	if ( ! completed) {
-			wait(timeoutMillis);
+		} else {
+			if ( ! completed) wait(timeoutMillis);
 		}
 		if (error != null) throw new ErrorReportedException(error);
+		return completed;
 	}
 
 	boolean completed = false;
-	public boolean isCompleted() {return completed;}
+	public boolean isCompleted() { return completed; }
 
 	/**
-	 * equivalent to {@link #awaitCompletion(long) awaitCompletion(0l)}.
+	 * Awaits for {@link #onCompleted()} or {@link #onError(Throwable)} to be called.
+	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
+	 *     <code>getCause()</code> will return the throwable passed as argument.
 	 */
 	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
 		awaitCompletion(0l);
@@ -97,12 +99,12 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	}
 
 	Throwable error;
-	public Throwable getError() {return error;}
+	public Throwable getError() { return error; }
 
 
 
 	public static class ErrorReportedException extends Exception {
-		ErrorReportedException(Throwable reportedError) {super(reportedError);}
+		ErrorReportedException(Throwable reportedError) { super(reportedError); }
 		private static final long serialVersionUID = 4822900070324973236L;
 	}
 }
