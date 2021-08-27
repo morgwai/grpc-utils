@@ -167,20 +167,6 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * Awaits until finalization (call to either {@link #onCompleted()} or
-	 * {@link #onError(Throwable)}) occurs or timeout exceeds.
-	 */
-	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-		synchronized (finalizationGuard) {
-			if (finalizedCount == 0 && reportedError == null) finalizationGuard.wait(timeoutMillis);
-		}
-	}
-
-	final Object finalizationGuard = new Object();
-
-
-
-	/**
 	 * Count of calls to {@link #onCompleted()} and {@link #onError(Throwable)}.
 	 * Should be 1 at the end of positive test methods.
 	 */
@@ -192,6 +178,8 @@ public class FakeResponseObserver<ResponseT>
 	 * By default <code>false</code>.
 	 */
 	public boolean failOnMultipleFinalizations = false;
+
+	final Object finalizationGuard = new Object();
 
 
 
@@ -241,6 +229,19 @@ public class FakeResponseObserver<ResponseT>
 	 */
 	public Throwable getReportedError() { return reportedError; }
 	Throwable reportedError;
+
+
+
+	/**
+	 * Awaits until finalization (call to either {@link #onCompleted()} or
+	 * {@link #onError(Throwable)}) occurs or timeout exceeds.
+	 */
+	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
+		synchronized (finalizationGuard) {
+			if (finalizedCount == 0 && reportedError == null) finalizationGuard.wait(timeoutMillis);
+		}
+		if (finalizedCount == 0 && reportedError == null) throw new RuntimeException("timeout");
+	}
 
 
 
