@@ -575,7 +575,7 @@ public class ConcurrentRequestObserverTest {
 	 * <code>FINER</code> will log every message received/sent.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
-	static final Level LOG_LEVEL = Level.INFO;
+	static final Level LOG_LEVEL = Level.OFF;
 
 	static final Logger log = Logger.getLogger(ConcurrentRequestObserverTest.class.getName());
 
