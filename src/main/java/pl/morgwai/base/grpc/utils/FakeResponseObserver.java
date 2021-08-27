@@ -29,8 +29,9 @@ import io.grpc.stub.StreamObserver;
  *   <li>Configure observer's readiness can be controlled by adjusting {@link #outputBufferSize} and
  *     {@link #unreadyDurationMillis} variables.</li>
  *   <li>Pass the observer to your gRPC method under test.</li>
- *   <li>For BiDi, a message producer and a request observer obtained from the method under test
- *     must be supplied using {@link #setBiDi(StreamObserver, Consumer)} method.<br/>
+ *   <li>For BiDi, a message producer and a request observer obtained from the method under
+ *     test must be supplied using {@link #startBiDiRequestDelivery(StreamObserver, Consumer)}
+ *     method.<br/>
  *     Client canceling a call can be simulated using {@link #cancel()} method.</li>
  *   <li>If the method under test dispatches work to other threads, {@link #awaitFinalization(long)}
  *     can be used to wait until {@link #onCompleted()} or {@link #onError(Throwable)} is called.
@@ -106,7 +107,12 @@ public class FakeResponseObserver<ResponseT>
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
 				log.fine("response observer unready");
 				ready = false;
-				grpcInternalExecutor.execute(() -> markObserverReady(unreadyDurationMillis));
+				grpcInternalExecutor.execute(new Runnable() {
+
+					@Override public void run() { markObserverReady(unreadyDurationMillis); }
+
+					@Override public String toString() { return "readyMarker"; }
+				});
 			}
 		} finally {
 			concurrencyGuard.unlock();
@@ -261,10 +267,12 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * Configures this {@code FakeResponseObserver} to deliver request messages to the supplied
-	 * {@code requestObserver} (test subject) whenever {@link #request(int)} method is called. Sets
-	 * necessary synchronization between calls from {@code requestProducer} to
+	 * {@code requestObserver} (test subject) whenever {@link #request(int)} method is called and
+	 * and delivers all the messages that were requested before.<br/>
+	 * Sets necessary synchronization between calls from {@code requestProducer} to
 	 * {@code requestObserver} and other parts of gRPC system to ensure obeying all concurrency
-	 * contracts.
+	 * contracts.<br/>
+	 * This method commonly starts bi-di streaming method tests.
 	 * @param requestObserver observer under test to which request messages should be delivered.
 	 * @param requestProducer dispatched to {@link #grpcInternalExecutor} whenever
 	 *        {@link #request(int)} method is called. It should usually call its argument's
@@ -273,7 +281,7 @@ public class FakeResponseObserver<ResponseT>
 	 *        simulate a client behavior.
 	 */
 	@SuppressWarnings("unchecked")
-	<RequestT> void setBiDi(
+	<RequestT> void startBiDiRequestDelivery(
 			StreamObserver<RequestT> requestObserver,
 			Consumer<StreamObserver<RequestT>> requestProducer) {
 		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) requestProducer;
@@ -303,24 +311,28 @@ public class FakeResponseObserver<ResponseT>
 		request(accumulatedMessageRequestCount);
 	}
 
-	Consumer<StreamObserver<?>> requestProducer;
+	volatile Consumer<StreamObserver<?>> requestProducer;
 	StreamObserver<?> requestObserver;
+	int accumulatedMessageRequestCount = 0;
 
 
 
 	@Override
 	public void request(int count) {
 		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
-		if (requestProducer != null) {
-			for (int i = 0; i < count; i++) {
-				grpcInternalExecutor.execute(() -> requestProducer.accept(requestObserver));
-			}
-		} else {
+		if (requestProducer == null) {
 			accumulatedMessageRequestCount += count;
+			return;
+		}
+		for (int i = 0; i < count; i++) {
+			grpcInternalExecutor.execute(new Runnable() {
+
+				@Override public void run() { requestProducer.accept(requestObserver); }
+
+				@Override public String toString() { return "requestProducer"; }
+			});
 		}
 	}
-
-	int accumulatedMessageRequestCount = 0;
 
 
 
@@ -390,11 +402,10 @@ public class FakeResponseObserver<ResponseT>
 			try {
 				super.execute(command);
 			} catch (Exception e) {
+				log.log(Level.SEVERE, command.toString(), e);
 				failure = true;
 			}
 		}
-
-
 
 		/**
 		 * {@code true} if there were attempts to execute more tasks after shutdown.
@@ -428,9 +439,7 @@ public class FakeResponseObserver<ResponseT>
 				}
 				labels.add(label);
 			} else {
-				if (log.isLoggable(Level.INFO) ) {
-					log.info(Thread.currentThread().getName() + ": failed to lock " + label);
-				}
+				log.severe(Thread.currentThread().getName() + ": failed to lock " + label);
 			}
 			return result;
 		}

@@ -2,9 +2,11 @@
 package pl.morgwai.base.grpc.utils;
 
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+
+import java.util.function.BiConsumer;
 
 import com.google.common.collect.Comparators;
+import io.grpc.stub.CallStreamObserver;
 
 
 
@@ -14,11 +16,15 @@ public class OrderedConcurrentRequestObserverTest extends ConcurrentRequestObser
 
 	@Override
 	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
-			newConcurrentRequestObserver() {
+			newConcurrentRequestObserver(
+					int numberOfConcurrentRequests,
+					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler
+	) {
 		return new OrderedConcurrentRequestObserver<>(
 				responseObserver,
-				null,
-				(error) -> fail("unexpected call"));
+				numberOfConcurrentRequests,
+				requestHandler,
+				newErrorHandler(Thread.currentThread()));
 	}
 
 

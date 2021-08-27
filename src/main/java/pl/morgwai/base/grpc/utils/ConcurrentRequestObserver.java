@@ -18,26 +18,16 @@ import io.grpc.stub.StreamObservers;
 /**
  * A request <code>StreamObserver</code> for bi-di streaming methods that dispatch work to multiple
  * threads and don't care about the order of responses. Handles all the synchronization and manual
- * flow control to maintain desired level of concurrency and prevent excessive buffering.
+ * flow control to maintain desired number of request messages processed concurrently and prevent
+ * excessive buffering.
  * <p>
- * Before returning a {@code ConcurrentRequestObserver} from a gRPC method, a delivery of
- * <code>n</code> request messages should be requested via
- * {@link io.grpc.stub.CallStreamObserver#request(int) responseObserver.request(n)} method,
- * where <code>n</code> is the desired level of concurrency (usually the size of the threadPool to
- * which {@link #onRequest(Object, CallStreamObserver)} dispatches work, divided by the number of
- * tasks it creates).<br/>
- * From then on, the observer will maintain this number of request messages being
- * concurrently processed (as long as the client can deliver them and consume responses on time and
- * no one else occupies the threadPool).</p>
- * <p>For example:
+ * Typical usage:
  * <pre>
  *public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
- *        StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *    ServerCallStreamObserver&lt;ResponseMessage&gt; responseObserver =
- *            (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
- *
- *    var requestObserver = new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
- *        responseObserver,
+ *        StreamObserver&lt;ResponseMessage&gt; responseObserver) {
+ *    return new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
+ *        (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
+ *        executor.getMaximumPoolSize(),
  *        (requestMessage, singleRequestMessageResponseObserver) -&gt; {
  *            executor.execute(() -&gt; {
  *                var responseMessage = process(requestMessage);
@@ -47,14 +37,8 @@ import io.grpc.stub.StreamObservers;
  *        },
  *        (error) -&gt; log.info(error)
  *    );
- *
- *    responseObserver.request(10);  // 10 is the size of executor's threadPool
- *    return requestObserver;
  *}
  * </pre></p>
- * <p>
- * If <code>1</code> is requested initially, then request messages will be handled sequentially and
- * thus the order of response messages will correspond to request messages.</p>
  * <p>
  * Once response observers for all request messages are closed and the client closes his request
  * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.</p>
@@ -129,10 +113,11 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 */
 	public ConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
+		int numberOfConcurrentRequests,
 		BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
-		this(responseObserver);
+		this(responseObserver, numberOfConcurrentRequests);
 		this.requestHandler = requestHandler;
 		this.errorHandler = errorHandler;
 	}
@@ -143,9 +128,12 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * Constructor for those who prefer to override {@link #onRequest(Object, CallStreamObserver)}
 	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
 	 */
-	protected ConcurrentRequestObserver(ServerCallStreamObserver<ResponseT> responseObserver) {
+	protected ConcurrentRequestObserver(
+			ServerCallStreamObserver<ResponseT> responseObserver,
+			int numberOfConcurrentRequests) {
 		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
+		responseObserver.request(numberOfConcurrentRequests);
 		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
 	}
 

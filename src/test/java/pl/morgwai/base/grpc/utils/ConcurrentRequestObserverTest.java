@@ -4,12 +4,14 @@ package pl.morgwai.base.grpc.utils;
 import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.google.common.collect.Comparators;
-
+import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
 import org.junit.Before;
@@ -34,6 +36,17 @@ public class ConcurrentRequestObserverTest {
 
 	FakeResponseObserver<ResponseMessage> responseObserver;
 	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+
+
+
+	/**
+	 * Starts the test it is called in.
+	 */
+	void startRequestDelivery() {
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver,
+				(requestObserver) -> deliverNextRequest(requestObserver));
+	}
 
 
 
@@ -82,16 +95,24 @@ public class ConcurrentRequestObserverTest {
 		maxRequestDeliveryDelayMillis = 0l;
 		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
-		requestObserver = newConcurrentRequestObserver();
-		responseObserver.setBiDi(requestObserver, (observer)-> deliverNextRequest(observer));
 	}
 
+
+
 	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
-			newConcurrentRequestObserver() {
+			newConcurrentRequestObserver(
+					int numberOfConcurrentRequests,
+					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler
+	) {
 		return new ConcurrentRequestObserver<>(
 				responseObserver,
-				null,  // set by test methods
-				(error) -> fail("unexpected call"));
+				numberOfConcurrentRequests,
+				requestHandler,
+				newErrorHandler(Thread.currentThread()));
+	}
+
+	Consumer<Throwable> newErrorHandler(Thread thread) {
+		return (error) -> thread.interrupt();
 	}
 
 
@@ -99,11 +120,15 @@ public class ConcurrentRequestObserverTest {
 	@Test
 	public void testSynchronousProcessingResponseObserverAlwaysReady() throws InterruptedException {
 		numberOfRequests = 10;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			individualObserver.onNext(new ResponseMessage(requestMessage.id));
-			individualObserver.onCompleted();
-		};
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				individualObserver.onNext(new ResponseMessage(requestMessage.id));
+				individualObserver.onCompleted();
+			}
+		);
 
+		startRequestDelivery();
 		responseObserver.request(1);  // runs the test
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
@@ -130,12 +155,15 @@ public class ConcurrentRequestObserverTest {
 		numberOfRequests = 15;
 		responseObserver.outputBufferSize = 4;
 		responseObserver.unreadyDurationMillis = 3l;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			individualObserver.onNext(new ResponseMessage(requestMessage.id));
-			individualObserver.onCompleted();
-		};
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				individualObserver.onNext(new ResponseMessage(requestMessage.id));
+				individualObserver.onCompleted();
+			}
+		);
 
-		responseObserver.request(1);  // runs the test
+		startRequestDelivery();
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -159,14 +187,18 @@ public class ConcurrentRequestObserverTest {
 	public void testOnError() throws InterruptedException {
 		numberOfRequests = 2;
 		final var error = new Exception();
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			if (requestMessage.id > 1) {
-				fail("no messages should be requested after an error");
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				if (requestMessage.id > 1) {
+					responseObserver.onError(
+							new Exception("no messages should be requested after an error"));
+				}
+				individualObserver.onError(error);
 			}
-			individualObserver.onError(error);
-		};
+		);
 
-		responseObserver.request(1);
+		startRequestDelivery();
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -185,21 +217,24 @@ public class ConcurrentRequestObserverTest {
 	public void testOnNextAfterOnCompleted() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			synchronized (exceptionThrownHolder) {
-				try {
-					individualObserver.onNext(new ResponseMessage(requestMessage.id));
-					individualObserver.onCompleted();
-					individualObserver.onNext(new ResponseMessage(requestMessage.id));
-					exceptionThrownHolder[0] = false;
-				} catch (IllegalStateException e) {
-					exceptionThrownHolder[0] = true;
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				synchronized (exceptionThrownHolder) {
+					try {
+						individualObserver.onNext(new ResponseMessage(requestMessage.id));
+						individualObserver.onCompleted();
+						individualObserver.onNext(new ResponseMessage(requestMessage.id));
+						exceptionThrownHolder[0] = false;
+					} catch (IllegalStateException e) {
+						exceptionThrownHolder[0] = true;
+					}
+					exceptionThrownHolder.notify();
 				}
-				exceptionThrownHolder.notify();
 			}
-		};
+		);
 
-		responseObserver.request(1);
+		startRequestDelivery();
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -220,21 +255,24 @@ public class ConcurrentRequestObserverTest {
 	public void testOnCompletedTwice() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			synchronized (exceptionThrownHolder) {
-				try {
-					individualObserver.onNext(new ResponseMessage(requestMessage.id));
-					individualObserver.onCompleted();
-					individualObserver.onCompleted();
-					exceptionThrownHolder[0] = false;
-				} catch (IllegalStateException e) {
-					exceptionThrownHolder[0] = true;
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				synchronized (exceptionThrownHolder) {
+					try {
+						individualObserver.onNext(new ResponseMessage(requestMessage.id));
+						individualObserver.onCompleted();
+						individualObserver.onCompleted();
+						exceptionThrownHolder[0] = false;
+					} catch (IllegalStateException e) {
+						exceptionThrownHolder[0] = true;
+					}
+					exceptionThrownHolder.notify();
 				}
-				exceptionThrownHolder.notify();
 			}
-		};
+		);
 
-		responseObserver.request(1);
+		startRequestDelivery();
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -255,21 +293,24 @@ public class ConcurrentRequestObserverTest {
 	public void testOnErrorAfterOnCompleted() throws InterruptedException {
 		Boolean[] exceptionThrownHolder = { null };
 		numberOfRequests = 1;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			synchronized (exceptionThrownHolder) {
-				try {
-					individualObserver.onNext(new ResponseMessage(requestMessage.id));
-					individualObserver.onCompleted();
-					individualObserver.onError(new Exception());;
-					exceptionThrownHolder[0] = false;
-				} catch (IllegalStateException e) {
-					exceptionThrownHolder[0] = true;
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
+				synchronized (exceptionThrownHolder) {
+					try {
+						individualObserver.onNext(new ResponseMessage(requestMessage.id));
+						individualObserver.onCompleted();
+						individualObserver.onError(new Exception());;
+						exceptionThrownHolder[0] = false;
+					} catch (IllegalStateException e) {
+						exceptionThrownHolder[0] = true;
+					}
+					exceptionThrownHolder.notify();
 				}
-				exceptionThrownHolder.notify();
 			}
-		};
+		);
 
-		responseObserver.request(1);
+		startRequestDelivery();
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
@@ -309,31 +350,34 @@ public class ConcurrentRequestObserverTest {
 	void testAsyncProcessing(
 		final long maxProcessingDelayMillis,
 		final int responsesPerRequest,
-		final int concurrencyLevel
+		final int numberOfConcurrentRequests
 	) throws InterruptedException {
-		final var userExecutor = new FailureTrackingThreadPoolExecutor(concurrencyLevel);
+		final var userExecutor = new FailureTrackingThreadPoolExecutor(numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			final var responseCount = new AtomicInteger(0);
-			// produce each response asynchronously in about 1-3ms
-			for (int i = 0; i < responsesPerRequest; i++) {
-				userExecutor.execute(() -> {
-					// sleep time varies depending on request/response message counts
-					final var processingDelay = halfProcessingDelay +
-							((requestMessage.id + responseCount.get()) % halfProcessingDelay);
-					try {
-						Thread.sleep(processingDelay);
-					} catch (InterruptedException e) {}
-					individualObserver.onNext(
-							new ResponseMessage(requestMessage.id));
-					if (responseCount.incrementAndGet() == responsesPerRequest) {
-						individualObserver.onCompleted();
-					}
-				});
+		requestObserver = newConcurrentRequestObserver(
+			numberOfConcurrentRequests,
+			(requestMessage, individualObserver) -> {
+				final var responseCount = new AtomicInteger(0);
+				// produce each response asynchronously in about 1-3ms
+				for (int i = 0; i < responsesPerRequest; i++) {
+					userExecutor.execute(() -> {
+						// sleep time varies depending on request/response message counts
+						final var processingDelay = halfProcessingDelay +
+								((requestMessage.id + responseCount.get()) % halfProcessingDelay);
+						try {
+							Thread.sleep(processingDelay);
+						} catch (InterruptedException e) {}
+						individualObserver.onNext(
+								new ResponseMessage(requestMessage.id));
+						if (responseCount.incrementAndGet() == responsesPerRequest) {
+							individualObserver.onCompleted();
+						}
+					});
+				}
 			}
-		};
+		);
 
-		responseObserver.request(concurrencyLevel);  // runs the test
+		startRequestDelivery();
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -364,29 +408,34 @@ public class ConcurrentRequestObserverTest {
 		final int responsesPerRequest = 2;
 		responseObserver.outputBufferSize = numberOfRequests * responsesPerRequest - 1;
 		responseObserver.unreadyDurationMillis = 1l;
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			individualObserver.setOnReadyHandler(() -> {
-				handlerCallCounters[requestMessage.id - 1]++;
-				synchronized (individualObserver) {
-					individualObserver.notify();
-				}
-			});
-			userExecutor.execute(() -> {
-				for (int i = 0; i < responsesPerRequest; i ++) {
-					synchronized (individualObserver) {
-						while ( ! individualObserver.isReady()) {
-							try {
-								individualObserver.wait();
-							} catch (InterruptedException e) {}
-						}
-					}
-					individualObserver.onNext(new ResponseMessage(requestMessage.id));
-				}
-				individualObserver.onCompleted();
-			});
-		};
+		requestObserver = newConcurrentRequestObserver(
+			1,
+			(requestMessage, individualObserver) -> {
 
-		responseObserver.request(1);  // runs the test
+				individualObserver.setOnReadyHandler(() -> {
+					handlerCallCounters[requestMessage.id - 1]++;
+					synchronized (individualObserver) {
+						individualObserver.notify();
+					}
+				});
+
+				userExecutor.execute(() -> {
+					for (int i = 0; i < responsesPerRequest; i ++) {
+						synchronized (individualObserver) {
+							while ( ! individualObserver.isReady()) {
+								try {
+									individualObserver.wait();
+								} catch (InterruptedException e) {}
+							}
+						}
+						individualObserver.onNext(new ResponseMessage(requestMessage.id));
+					}
+					individualObserver.onCompleted();
+				});
+			}
+		);
+
+		startRequestDelivery();
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -431,7 +480,7 @@ public class ConcurrentRequestObserverTest {
 	}
 
 	void testDispatchingOnReadyHandlerIntegration(
-		final int concurrentRequests,
+		final int numberOfConcurrentRequests,
 		final int tasksPerRequest,
 		final int responsesPerTask,
 		final long maxProcessingDelayMillis,
@@ -439,28 +488,31 @@ public class ConcurrentRequestObserverTest {
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var userExecutor = new FailureTrackingThreadPoolExecutor(executorThreads);
-		requestObserver.requestHandler = (requestMessage, individualObserver) -> {
-			final int[] responseCounters = new int[tasksPerRequest];
-			individualObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-				individualObserver,
-				userExecutor,
-				tasksPerRequest,
-				(i) -> responseCounters[i] >= responsesPerTask,
-				(i) -> {
-					if (halfProcessingDelay > 0) {
-						final var processingDelay = halfProcessingDelay +
+		requestObserver = newConcurrentRequestObserver(
+			numberOfConcurrentRequests,
+			(requestMessage, individualObserver) -> {
+				final int[] responseCounters = new int[tasksPerRequest];
+				individualObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+					individualObserver,
+					userExecutor,
+					tasksPerRequest,
+					(i) -> responseCounters[i] >= responsesPerTask,
+					(i) -> {
+						if (halfProcessingDelay > 0) {
+							final var processingDelay = halfProcessingDelay +
 								((requestMessage.id + responseCounters[i]) % halfProcessingDelay);
-						try {
-							Thread.sleep(processingDelay);
-						} catch (InterruptedException e) {}
+							try {
+								Thread.sleep(processingDelay);
+							} catch (InterruptedException e) {}
+						}
+						responseCounters[i]++;
+						return new ResponseMessage(requestMessage.id);
 					}
-					responseCounters[i]++;
-					return new ResponseMessage(requestMessage.id);
-				}
-			));
-		};
+				));
+			}
+		);
 
-		responseObserver.request(concurrentRequests);  // runs the test
+		startRequestDelivery();
 		responseObserver.awaitFinalization(10_000l);
 		final var executorShutdownTimeoutMillis = 100l
 				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
@@ -523,7 +575,7 @@ public class ConcurrentRequestObserverTest {
 	 * <code>FINER</code> will log every message received/sent.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
-	static final Level LOG_LEVEL = Level.OFF;
+	static final Level LOG_LEVEL = Level.INFO;
 
 	static final Logger log = Logger.getLogger(ConcurrentRequestObserverTest.class.getName());
 

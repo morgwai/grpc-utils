@@ -16,11 +16,11 @@ import pl.morgwai.base.utils.OrderedConcurrentOutputBuffer.OutputStream;
 /**
  * A {@link ConcurrentRequestObserver} that uses {@link OrderedConcurrentOutputBuffer} to
  * automatically ensure that response messages are sent in order corresponding to request messages
- * order.<br/>
- * Note: as only responses to "head" request are sent directly to a client and rest is buffered,
- * the concurrency level (number of requests processed concurrently, determined by the initial
- * {@link CallStreamObserver#request(int)} call) should not be too big to avoid excessive buffer
- * growth.
+ * order.
+ * <p>
+ * Note: as only responses to "head" requests are sent directly to clients and rest is buffered,
+ * the number of requests processed concurrently should not be set too big to avoid excessive buffer
+ * growth.</p>
  */
 public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 		extends ConcurrentRequestObserver<RequestT, ResponseT>
@@ -30,10 +30,11 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 	public OrderedConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
+		int numberOfConcurrentRequests,
 		BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
-		this(responseObserver);
+		this(responseObserver, numberOfConcurrentRequests);
 		this.requestHandler = requestHandler;
 		this.errorHandler = errorHandler;
 	}
@@ -45,8 +46,9 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
 	 */
 	protected OrderedConcurrentRequestObserver(
-			ServerCallStreamObserver<ResponseT> responseObserver) {
-		super(responseObserver);
+			ServerCallStreamObserver<ResponseT> responseObserver,
+			int numberOfConcurrentRequests) {
+		super(responseObserver, numberOfConcurrentRequests);
 		buffer = new OrderedConcurrentOutputBuffer<>(new OutputStream<>() {
 
 			@Override
