@@ -213,7 +213,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	/**
 	 * Observer of responses to 1 particular request message.
 	 */
-	class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
+	protected class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
 		Runnable onReadyHandler;
 
