@@ -330,7 +330,9 @@ public class FakeResponseObserver<ResponseT>
 
 				@Override public void run() { requestProducer.accept(requestObserver); }
 
-				@Override public String toString() { return "requestProducer"; }
+				@Override public String toString() {
+					return "requestProducer " + requestProducer.toString();
+				}
 			});
 		}
 	}
