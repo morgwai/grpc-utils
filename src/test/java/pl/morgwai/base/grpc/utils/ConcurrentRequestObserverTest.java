@@ -28,87 +28,86 @@ public class ConcurrentRequestObserverTest {
 
 
 
-	/**
-	 * Test subject. As it is an abstract class, subclasses are created in test methods (anon ones)
-	 * or using {@link NoErrorConcurrentRequestObserver} helper class.
-	 */
-	ConcurrentRequestObserver<RequestMessage, ResponseMessage> requestObserver;
-
 	FakeResponseObserver<ResponseMessage> responseObserver;
 	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
 
-
-
-	/**
-	 * Starts the test it is called in.
-	 */
-	void startRequestDelivery() {
-		responseObserver.startBiDiRequestDelivery(
-				requestObserver,
-				(requestObserver) -> deliverNextRequest(requestObserver));
-	}
-
-
-
-	/**
-	 * Simulates client delivering request messages. Controlled by adjusting values of the below
-	 * {@link #numberOfRequests} and {@link #maxRequestDeliveryDelayMillis} variables in test
-	 * methods.
-	 */
-	void deliverNextRequest(StreamObserver<RequestMessage> requestObserver) {
-		// exit if all requests have been already delivered
-		final int currentId;
-		synchronized (deliveryLock) {
-			currentId = requestIdSequence;
-			if (requestIdSequence >= numberOfRequests) return;
-		}
-
-		// deliver the next message immediately or after a slight delay
-		if (maxRequestDeliveryDelayMillis > 0l) {
-			try {
-				Thread.sleep(currentId % (maxRequestDeliveryDelayMillis + 1));
-			} catch (InterruptedException e) {}
-		}
-
-		synchronized (deliveryLock) {
-			if (requestIdSequence >= numberOfRequests) return;
-			final var requestMessage = new RequestMessage(++requestIdSequence);
-			if (log.isLoggable(Level.FINER)) log.finer("delivering " + requestMessage);
-			requestObserver.onNext(requestMessage);
-			if (requestIdSequence == numberOfRequests) {
-				log.fine("half-closing");
-				requestObserver.onCompleted();
-			}
-		}
-	}
-
-	int numberOfRequests;  // must be set in test methods
-	long maxRequestDeliveryDelayMillis;  // may be overridden in test methods
-	int requestIdSequence;
-	final Object deliveryLock = new Object();
-
-
-
 	@Before
 	public void setup() {
-		requestIdSequence = 0;
-		maxRequestDeliveryDelayMillis = 0l;
 		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
 	}
 
 
 
+	/**
+	 * Simulates client delivering request messages.
+	 * For use with {@link FakeResponseObserver#startBiDiRequestDelivery(StreamObserver, Consumer)}.
+	 * Instances created in test methods.
+	 */
+	static class RequestProducer implements Consumer<StreamObserver<RequestMessage>> {
+
+		final int numberOfRequests;
+		final long maxRequestDeliveryDelayMillis;
+
+		RequestProducer(int numberOfRequests, long maxRequestDeliveryDelayMillis) {
+			this.numberOfRequests = numberOfRequests;
+			this.maxRequestDeliveryDelayMillis = maxRequestDeliveryDelayMillis;
+		}
+
+		RequestProducer(int numberOfRequests) { this(numberOfRequests, 0l); }
+
+
+
+		@Override
+		public void accept(StreamObserver<RequestMessage> requestObserver) {
+			// exit if all requests have been already delivered
+			if (requestIdSequence >= numberOfRequests) return;
+
+			// deliver the next message immediately or after a slight delay
+			if (maxRequestDeliveryDelayMillis > 0l) {
+				try {
+					Thread.sleep(requestIdSequence % (maxRequestDeliveryDelayMillis + 1));
+				} catch (InterruptedException e) {}
+			}
+
+			synchronized (deliveryLock) {
+				if (requestIdSequence >= numberOfRequests) return;
+				final var requestMessage = new RequestMessage(++requestIdSequence);
+				if (log.isLoggable(Level.FINER)) log.finer("delivering " + requestMessage);
+				requestObserver.onNext(requestMessage);
+				if (requestIdSequence == numberOfRequests) {
+					log.fine("half-closing");
+					requestObserver.onCompleted();
+				}
+			}
+		}
+
+		volatile int requestIdSequence = 0;
+		final Object deliveryLock = new Object(); // ensures requests are delivered in order
+
+
+
+		@Override public String toString() { return ""; }
+	}
+
+
+
+	/**
+	 * Delegate test subject creation to this protected method so that tests of subclasses of
+	 * ConcurrentRequestObserver can reuse this test class.
+	 * @see OrderedConcurrentRequestObserverTest
+	 */
 	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
 			newConcurrentRequestObserver(
 					int numberOfConcurrentRequests,
-					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler
+					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler,
+					Consumer<Throwable> errorHandler
 	) {
 		return new ConcurrentRequestObserver<>(
 				responseObserver,
 				numberOfConcurrentRequests,
 				requestHandler,
-				newErrorHandler(Thread.currentThread()));
+				errorHandler);
 	}
 
 	Consumer<Throwable> newErrorHandler(Thread thread) {
@@ -119,22 +118,21 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testSynchronousProcessingResponseObserverAlwaysReady() throws InterruptedException {
-		numberOfRequests = 10;
-		requestObserver = newConcurrentRequestObserver(
+		final var numberOfRequests = 10;
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				individualObserver.onNext(new ResponseMessage(requestMessage.id));
 				individualObserver.onCompleted();
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
-		responseObserver.request(1);  // runs the test
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -152,23 +150,23 @@ public class ConcurrentRequestObserverTest {
 	@Test
 	public void testSynchronousProcessingResponseObserverUnreadySometimes()
 			throws InterruptedException {
-		numberOfRequests = 15;
+		final var numberOfRequests = 15;
 		responseObserver.outputBufferSize = 4;
 		responseObserver.unreadyDurationMillis = 3l;
-		requestObserver = newConcurrentRequestObserver(
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				individualObserver.onNext(new ResponseMessage(requestMessage.id));
 				individualObserver.onCompleted();
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -185,9 +183,9 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testOnError() throws InterruptedException {
-		numberOfRequests = 2;
+		final var numberOfRequests = 2;
 		final var error = new Exception();
-		requestObserver = newConcurrentRequestObserver(
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				if (requestMessage.id > 1) {
@@ -195,15 +193,15 @@ public class ConcurrentRequestObserverTest {
 							new Exception("no messages should be requested after an error"));
 				}
 				individualObserver.onError(error);
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
@@ -215,9 +213,9 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testOnNextAfterOnCompleted() throws InterruptedException {
-		Boolean[] exceptionThrownHolder = { null };
-		numberOfRequests = 1;
-		requestObserver = newConcurrentRequestObserver(
+		final Boolean[] exceptionThrownHolder = { null };
+		final var numberOfRequests = 1;
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				synchronized (exceptionThrownHolder) {
@@ -231,17 +229,17 @@ public class ConcurrentRequestObserverTest {
 					}
 					exceptionThrownHolder.notify();
 				}
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
@@ -253,9 +251,9 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testOnCompletedTwice() throws InterruptedException {
-		Boolean[] exceptionThrownHolder = { null };
-		numberOfRequests = 1;
-		requestObserver = newConcurrentRequestObserver(
+		final Boolean[] exceptionThrownHolder = { null };
+		final var numberOfRequests = 1;
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				synchronized (exceptionThrownHolder) {
@@ -269,17 +267,17 @@ public class ConcurrentRequestObserverTest {
 					}
 					exceptionThrownHolder.notify();
 				}
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
@@ -291,9 +289,9 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testOnErrorAfterOnCompleted() throws InterruptedException {
-		Boolean[] exceptionThrownHolder = { null };
-		numberOfRequests = 1;
-		requestObserver = newConcurrentRequestObserver(
+		final Boolean[] exceptionThrownHolder = { null };
+		final var numberOfRequests = 1;
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 				synchronized (exceptionThrownHolder) {
@@ -307,17 +305,17 @@ public class ConcurrentRequestObserverTest {
 					}
 					exceptionThrownHolder.notify();
 				}
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
 		}
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
@@ -328,33 +326,31 @@ public class ConcurrentRequestObserverTest {
 
 
 	@Test
-	public void testAsyncSequentialProcessing40Requests() throws InterruptedException {
-		numberOfRequests = 40;
-		maxRequestDeliveryDelayMillis = 3;
+	public void testAsyncSequentialProcessingOf40Requests() throws InterruptedException {
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(4l, 1, 1);
+		testAsyncProcessing(40, 3l, 4l, 1, 1);
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
 	}
 
 	@Test
-	public void testAsyncProcessing100Requests5Threads() throws InterruptedException {
-		numberOfRequests = 100;
-		maxRequestDeliveryDelayMillis = 3;
+	public void testAsyncProcessingOf100RequestsIn5Threads() throws InterruptedException {
 		responseObserver.outputBufferSize = 13;
 		responseObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(4l, 3, 5);
+		testAsyncProcessing(100, 3l, 4l, 3, 5);
 	}
 
 	void testAsyncProcessing(
+		final int numberOfRequests,
+		final long maxRequestDeliveryDelayMillis,
 		final long maxProcessingDelayMillis,
 		final int responsesPerRequest,
 		final int numberOfConcurrentRequests
 	) throws InterruptedException {
 		final var userExecutor = new FailureTrackingThreadPoolExecutor(numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
-		requestObserver = newConcurrentRequestObserver(
+		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {
 				final var responseCount = new AtomicInteger(0);
@@ -374,17 +370,18 @@ public class ConcurrentRequestObserverTest {
 						}
 					});
 				}
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver,
+				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
@@ -401,14 +398,14 @@ public class ConcurrentRequestObserverTest {
 
 
 	@Test
-	public void testIndividualOnReadyHandlerAreCalledProperly() throws InterruptedException {
+	public void testIndividualOnReadyHandlersAreCalledProperly() throws InterruptedException {
 		final var userExecutor = new FailureTrackingThreadPoolExecutor(5);
 		final int[] handlerCallCounters = {0, 0};
-		numberOfRequests = 2;
+		final var numberOfRequests = 2;
 		final int responsesPerRequest = 2;
 		responseObserver.outputBufferSize = numberOfRequests * responsesPerRequest - 1;
 		responseObserver.unreadyDurationMillis = 1l;
-		requestObserver = newConcurrentRequestObserver(
+		final var requestObserver = newConcurrentRequestObserver(
 			1,
 			(requestMessage, individualObserver) -> {
 
@@ -432,17 +429,17 @@ public class ConcurrentRequestObserverTest {
 					}
 					individualObserver.onCompleted();
 				});
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
 
 		assertEquals("handler of the active observer should be called", 2, handlerCallCounters[1]);
 		assertEquals("handler of and finalized observer should not be called",
@@ -463,32 +460,32 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testDispatchingOnReadyHandlerIntegrationSingleThread() throws InterruptedException {
-		numberOfRequests = 10;
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(1, 1, 10, 0l, 5);
+		testDispatchingOnReadyHandlerIntegration(10, 0l, 0l, 1, 10, 1, 2);
 		assertTrue("messages should be written in order",
 				Comparators.isInOrder(responseObserver.getOutputData(), responseComparator));
 	}
 
 	@Test
 	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
-		numberOfRequests = 20;
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(3, 3, 5, 4l, 5);
+		testDispatchingOnReadyHandlerIntegration(20, 3l, 4l, 3, 5, 3, 5);
 	}
 
 	void testDispatchingOnReadyHandlerIntegration(
-		final int numberOfConcurrentRequests,
+		final int numberOfRequests,
+		final long maxRequestDeliveryDelayMillis,
+		final long maxProcessingDelayMillis,
 		final int tasksPerRequest,
 		final int responsesPerTask,
-		final long maxProcessingDelayMillis,
+		final int numberOfConcurrentRequests,
 		final int executorThreads
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var userExecutor = new FailureTrackingThreadPoolExecutor(executorThreads);
-		requestObserver = newConcurrentRequestObserver(
+		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {
 				final int[] responseCounters = new int[tasksPerRequest];
@@ -509,17 +506,18 @@ public class ConcurrentRequestObserverTest {
 						return new ResponseMessage(requestMessage.id);
 					}
 				));
-			}
+			},
+			newErrorHandler(Thread.currentThread())
 		);
 
-		startRequestDelivery();
+		responseObserver.startBiDiRequestDelivery(
+				requestObserver,
+				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
 		responseObserver.awaitFinalization(10_000l);
-		final var executorShutdownTimeoutMillis = 100l
-				+ Math.max(responseObserver.unreadyDurationMillis, maxRequestDeliveryDelayMillis);
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * tasksPerRequest * responsesPerTask,
