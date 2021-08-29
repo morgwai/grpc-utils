@@ -41,7 +41,7 @@ public class ConcurrentRequestObserverTest {
 
 	/**
 	 * Simulates client delivering request messages.
-	 * For use with {@link FakeResponseObserver#startBiDiRequestDelivery(StreamObserver, Consumer)}.
+	 * For use with {@link FakeResponseObserver#startRequestDelivery(StreamObserver, Consumer)}.
 	 * Instances created in test methods.
 	 */
 	static class RequestProducer implements Consumer<StreamObserver<RequestMessage>> {
@@ -128,7 +128,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
 		grpcInternalExecutor.shutdown();
@@ -162,7 +162,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
 		grpcInternalExecutor.shutdown();
@@ -197,7 +197,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
 		grpcInternalExecutor.shutdown();
@@ -233,7 +233,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
@@ -271,7 +271,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
@@ -309,7 +309,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
 			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
@@ -374,7 +374,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
 		responseObserver.awaitFinalization(10_000l);
@@ -433,7 +433,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(10_000l);
 		grpcInternalExecutor.shutdown();
@@ -510,7 +510,7 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
-		responseObserver.startBiDiRequestDelivery(
+		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
 		responseObserver.awaitFinalization(10_000l);

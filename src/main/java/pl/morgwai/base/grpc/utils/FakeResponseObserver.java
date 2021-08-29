@@ -8,6 +8,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -26,16 +27,14 @@ import io.grpc.stub.StreamObserver;
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.<br/>
  * <br/>
  * Usage:<ol>
- *   <li>Configure observer's readiness can be controlled by adjusting {@link #outputBufferSize} and
+ *   <li>Configure observer's readiness by adjusting {@link #outputBufferSize} and
  *     {@link #unreadyDurationMillis} variables.</li>
- *   <li>Pass the observer to your gRPC method under test.</li>
- *   <li>For BiDi, a message producer and a request observer obtained from the method under
- *     test must be supplied using {@link #startBiDiRequestDelivery(StreamObserver, Consumer)}
- *     method.<br/>
- *     Client canceling a call can be simulated using {@link #cancel()} method.</li>
- *   <li>If the method under test dispatches work to other threads, {@link #awaitFinalization(long)}
- *     can be used to wait until {@link #onCompleted()} or {@link #onError(Throwable)} is called.
- *     </li>
+ *   <li>Depending on client type (unary/streaming) of your gRPC method pass it to one of
+ *     {@link #callWithinListenerLock(Consumer)},
+ *     {@link #callWithinListenerLock(Function, Consumer)} methods.</li>
+ *   <li>{@link #awaitFinalization(long)} can be used to wait until {@link #onCompleted()} or
+ *     {@link #onError(Throwable)} is called.</li>
+ *   <li>Client canceling can be simulated using {@link #cancel()} method.</li>
  *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
  *     {@link #getReportedError()} methods and by shutting down and inspecting
  *     {@link FailureTrackingThreadPoolExecutor} supplied to the constructor.</li>
@@ -48,7 +47,9 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * @param grpcInternalExecutor executor for gRPC internal tasks, such as marking response
-	 * observer as ready, delivering requested messages etc.
+	 * observer as ready, delivering requested messages etc. Its pool size should be not smaller
+	 * than the number of requests concurrently processed by the code under test (usually determined
+	 * by the argument of the initial call to {@link ServerCallStreamObserver#request(int)}.
 	 */
 	public FakeResponseObserver(FailureTrackingThreadPoolExecutor grpcInternalExecutor) {
 		this.grpcInternalExecutor = grpcInternalExecutor;
@@ -77,15 +78,60 @@ public class FakeResponseObserver<ResponseT>
 
 
 
+	final Object listenerLock = new Object();
+
+
+
+	/**
+	 * Calls {@code unaryClientMethod} within listener's lock.
+	 */
+	public void callWithinListenerLock(Consumer<StreamObserver<ResponseT>> unaryClientMethod) {
+		synchronized (listenerLock) {
+			unaryClientMethod.accept(this);
+			if (onReadyHandler != null) onReadyHandler.run();
+		}
+	}
+
+
+
+	/**
+	 * Calls {@code streamingClientMethod} within listener's lock and delivers request messages
+	 * to returned request observer from {@code requestProducer}.
+	 * @param requestProducer dispatched to {@link #grpcInternalExecutor} whenever
+	 *        {@link #request(int)} method is called. It should usually call its argument's
+	 *        {@link StreamObserver#onNext(Object)} possibly followed by
+	 *        {@link StreamObserver#onCompleted()} or {@link StreamObserver#onError(Throwable)} to
+	 *        simulate client's behavior. It may sleep arbitrarily long to simulate before the above
+	 *        calls to simulate client's or network delay.
+	 */
+	public <RequestT> void callWithinListenerLock(
+			Function<StreamObserver<ResponseT>, StreamObserver<RequestT>> streamingClientMethod,
+			Consumer<StreamObserver<RequestT>> requestProducer) {
+		StreamObserver<RequestT> requestObserver;
+		synchronized (listenerLock) {
+			requestObserver = streamingClientMethod.apply(this);
+		}
+		startRequestDelivery(requestObserver, requestProducer);
+		if (autoRequest) requestOne();
+	}
+
+
+
+	/**
+	 * For low level testing of onReady and onCancel handlers.
+	 */
+	public void runWithinListenerLock(Runnable handler) {
+		synchronized (listenerLock) {
+			handler.run();
+		}
+	}
+
+
+
 	/**
 	 * Verifies that at most 1 thread calls this observer's methods concurrently.
 	 */
 	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
-
-	/**
-	 * Ensures that user's request observer will be called by at most 1 thread concurrently.
-	 */
-	final Object listenerLock = new Object();
 
 
 
@@ -251,7 +297,7 @@ public class FakeResponseObserver<ResponseT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
-			this.autoRequestDisabled = true;
+			this.autoRequest = false;
 		} finally {
 			concurrencyGuard.unlock();
 		}
@@ -262,27 +308,22 @@ public class FakeResponseObserver<ResponseT>
 		disableAutoRequest();
 	}
 
-	boolean autoRequestDisabled = false;
+	boolean autoRequest = true;
 
 
 
 	/**
-	 * Configures this {@code FakeResponseObserver} to deliver request messages to the supplied
-	 * {@code requestObserver} (test subject) whenever {@link #request(int)} method is called and
-	 * and delivers all the messages that were requested before.<br/>
-	 * Sets necessary synchronization between calls from {@code requestProducer} to
-	 * {@code requestObserver} and other parts of gRPC system to ensure obeying all concurrency
-	 * contracts.<br/>
-	 * This method commonly starts bi-di streaming method tests.
-	 * @param requestObserver observer under test to which request messages should be delivered.
-	 * @param requestProducer dispatched to {@link #grpcInternalExecutor} whenever
-	 *        {@link #request(int)} method is called. It should usually call its argument's
-	 *        {@link StreamObserver#onNext(Object)} optionally followed by
-	 *        {@link StreamObserver#onCompleted()} or {@link StreamObserver#onError(Throwable)} to
-	 *        simulate a client behavior.
+	 * Sets up delivery of request messages from {@code requestProducer} to {@code requestObserver}
+	 * (test subject) whenever {@link #request(int)} method is called.<br/>
+	 * Also delivers messages for all accumulated {@link #request(int)} calls that happened before
+	 * this method was called.
+	 * <p>
+	 * Note: this method is exposed for low level testing of stand-alone request observers. It is
+	 * automatically called by {@link #callWithinListenerLock(Function, Consumer)} which should be
+	 * used for normal gRPC method testing.</p>
 	 */
 	@SuppressWarnings("unchecked")
-	<RequestT> void startBiDiRequestDelivery(
+	<RequestT> void startRequestDelivery(
 			StreamObserver<RequestT> requestObserver,
 			Consumer<StreamObserver<RequestT>> requestProducer) {
 		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) requestProducer;
@@ -320,23 +361,31 @@ public class FakeResponseObserver<ResponseT>
 
 	@Override
 	public void request(int count) {
-		if ( ! autoRequestDisabled) throw new AssertionError("autoRequest was not disabled");
+		if (autoRequest) throw new AssertionError("autoRequest was not disabled");
 		if (requestProducer == null) {
 			accumulatedMessageRequestCount += count;
 			return;
 		}
-		for (int i = 0; i < count; i++) {
-			grpcInternalExecutor.execute(new Runnable() {
-
-				@Override public void run() { requestProducer.accept(requestObserver); }
-
-				@Override public String toString() {
-					return "requestProducer " + requestProducer.toString();
-				}
-			});
-		}
+		for (int i = 0; i < count; i++) requestOne();
 	}
 
+	void requestOne() {
+		grpcInternalExecutor.execute(new Runnable() {
+
+			@Override public void run() {
+				requestProducer.accept(requestObserver);
+				if (autoRequest) {
+					synchronized (finalizationGuard) {
+						if (finalizedCount == 0) requestOne();
+					}
+				}
+			}
+
+			@Override public String toString() {
+				return "requestProducer " + requestProducer.toString();
+			}
+		});
+	}
 
 
 	/**
