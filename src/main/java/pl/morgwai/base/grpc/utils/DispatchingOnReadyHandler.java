@@ -4,11 +4,12 @@ package pl.morgwai.base.grpc.utils;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
@@ -28,7 +29,8 @@ import io.grpc.stub.StreamObserver;
  *            streamObserver.onNext(messageProducer.apply(i));
  *        if (allTasksCompleted()) streamObserver.onCompleted();
  *    } catch (Throwable t) {
- *        exceptionHandler.accept(i, t);
+ *        var toReport = handleException(taskNumber, throwable);
+ *        if (toReport != null) streamObserver.onError(toReport);
  *    } finally {
  *        cleanupHandler.accept(i);
  *    }
@@ -112,10 +114,9 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Constructs a "full-version" handler that includes handling exception thrown by
 	 * {@link #completionIndicator} and {@link #messageProducer}.
 	 * <p>
-	 * If {@link #exceptionHandler} does not interrupt all tasks itself and calls
-	 * {@link StreamObserver#onError(Throwable) streamObserver.onError(error)}, then it must do so
-	 * while synchronized on this {@code DispatchingOnReadyHandler} instance to avoid collisions
-	 * with other tasks calling {@link StreamObserver#onNext(Object)}.</p>
+	 * If and only if {@link #exceptionHandler} returns non-null and
+	 * {@link StreamObserver#onError(Throwable)} hasn't been called yet, then it will be called with
+	 * obtained value as its argument.</p>
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -123,7 +124,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		int numberOfTasks,
 		ThrowingFunction<Integer, Boolean> completionIndicator,
 		ThrowingFunction<Integer, ResponseT> messageProducer,
-		BiConsumer<Integer, Throwable> exceptionHandler,
+		BiFunction<Integer, Throwable, Throwable> exceptionHandler,
 		Consumer<Integer> cleanupHandler
 	) {
 		this(streamObserver, taskExecutor, numberOfTasks);
@@ -137,6 +138,11 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 	/**
 	 * Constructs a handler for "no-exception" case.
+	 * <p>
+	 * If {@link Error} or {@link RuntimeException} occurs, it is reported via
+	 * {@link StreamObserver#onError(Throwable)} (except for {@link StatusRuntimeException} and
+	 * unless some error has been already reported) and re-thrown (including
+	 * {@link StatusRuntimeException}).</p>
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -149,8 +155,14 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		this.completionIndicator = (i) -> completionIndicator.apply(i);
 		this.messageProducer = (i) -> messageProducer.apply(i);
 		this.exceptionHandler = (i, e) -> {
+			if ( ! (e instanceof StatusRuntimeException)) {
+				synchronized (this) {
+					streamObserver.onError(e);
+				}
+			}
 			if (e instanceof Error) throw (Error) e;
 			if (e instanceof RuntimeException) throw (RuntimeException) e;
+			return null;
 		};
 	}
 
@@ -162,7 +174,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * This is roughly equivalent to
 	 * {@link io.grpc.stub.StreamObservers
 	 * #copyWithFlowControl(java.util.Iterator, CallStreamObserver)}, except that it will run on
-	 * different executor.</p>
+	 * different executor and for {@link Error}/{@link RuntimeException} reporting.</p>
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -184,20 +196,17 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	/**
 	 * Constructs a handler for "single-thread" case that includes handling exception thrown by
 	 * {@link #completionIndicator} and {@link #messageProducer}.
-	 * <p>
-	 * Unlike in
-	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
-	 * ThrowingFunction, BiConsumer, Consumer) the multithreaded version}, calls to
-	 * {@link StreamObserver#onError(Throwable) streamObserver.onError(error)} in
-	 * {@link #exceptionHandler} don't need to be synchronized, but it's still recommended to avoid
-	 * mistakes.</p>
+	 * @see DispatchingOnReadyHandler
+	 * #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
+	 * ThrowingFunction, BiFunction, Consumer) multi-task constructor for details about exception
+	 * handling
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
 		Executor taskExecutor,
 		Callable<Boolean> completionIndicator,
 		Callable<ResponseT> messageProducer,
-		Consumer<Throwable> exceptionHandler,
+		Function<Throwable, Throwable> exceptionHandler,
 		Runnable cleanupHandler
 	) {
 		this(
@@ -206,7 +215,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			1,
 			(i) -> completionIndicator.call(),
 			(i) -> messageProducer.call(),
-			(i, error) -> exceptionHandler.accept(error),
+			(i, error) -> exceptionHandler.apply(error),
 			(i) -> cleanupHandler.run()
 		);
 	}
@@ -226,15 +235,16 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		this.streamObserver = streamObserver;
 		this.taskExecutor = taskExecutor;
 		this.numberOfTasks = numberOfTasks;
-		completionCount = new AtomicInteger(0);
 		taskRunning = new boolean[numberOfTasks];
 	}
 
 	CallStreamObserver<ResponseT> streamObserver;
 	Executor taskExecutor;
 	int numberOfTasks;
-	AtomicInteger completionCount;
 	boolean[] taskRunning;
+
+	AtomicInteger completionCount = new AtomicInteger(0);
+	boolean errorReported = false;
 
 
 
@@ -254,11 +264,11 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
-	protected void handleException(int i, Throwable error) {
-		if (exceptionHandler != null) exceptionHandler.accept(i, error);
+	protected Throwable handleException(int i, Throwable error) {
+		return exceptionHandler.apply(i, error);
 	}
 
-	protected BiConsumer<Integer, Throwable> exceptionHandler;
+	protected BiFunction<Integer, Throwable, Throwable> exceptionHandler;
 
 
 
@@ -274,6 +284,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Dispatches tasks to handle a single cycle of {@link #responseObserver}'s readiness.
 	 */
 	public synchronized void run() {
+		if (errorReported) return;
 		for (int i = 0; i < numberOfTasks; i++) {
 			// it may happen that responseObserver will change its state from unready to ready very
 			// fast, before some tasks can even notice. Such tasks will span over more than 1 cycle
@@ -306,7 +317,15 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				streamObserver.onCompleted();
 			}
 		} catch (Throwable throwable) {
-			handleException(taskNumber, throwable);
+			var toReport = handleException(taskNumber, throwable);
+			if (toReport != null) {
+				synchronized (this) {
+					if ( ! errorReported) {
+						streamObserver.onError(toReport);
+						errorReported = true;
+					}
+				}
+			}
 		} finally {
 			if (ready) cleanup(taskNumber);
 		}

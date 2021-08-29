@@ -1,7 +1,6 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.io.FileNotFoundException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.ConsoleHandler;
@@ -70,9 +69,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				synchronized (handler) {
-					responseObserver.onError(error);
-				}
+				return error;
 			},
 			() -> {
 				log.fine("cleanup");
@@ -122,9 +119,7 @@ public class DispatchingOnReadyHandlerTest {
 			(i, error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				synchronized (handler) {
-					responseObserver.onError(error);
-				}
+				return error;
 			},
 			(i) -> {
 				log.fine("cleanup");
@@ -187,9 +182,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				synchronized (handler) {
-					responseObserver.onError(error);
-				}
+				return error;
 			},
 			() -> {
 				log.fine("cleanup");
@@ -228,7 +221,7 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testExceptionIsHandledProperly() throws InterruptedException {
 		final var numberOfexpectedResponses = 5;
-		final var thrownException = new FileNotFoundException();
+		final var thrownException = new Exception();
 		responseObserver.outputBufferSize = 3;
 		responseObserver.unreadyDurationMillis = 5l;
 		handler = new DispatchingOnReadyHandler<>(
@@ -245,9 +238,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.fine("exception " + error);
 				caughtError = error;
-				synchronized (handler) {
-					responseObserver.onError(error);
-				}
+				return error;
 			},
 			() -> {
 				log.fine("cleanup");
@@ -264,7 +255,10 @@ public class DispatchingOnReadyHandlerTest {
 		grpcInternalExecutor.awaitTermination(executorShutdownTimeoutMillis, TimeUnit.MILLISECONDS);
 		userExecutor.awaitTermination(10, TimeUnit.MILLISECONDS);
 
-		assertSame("FileNotFoundException should be thrown", thrownException, caughtError);
+		assertSame("thrownException should be passed to exceptionHandler",
+				thrownException, caughtError);
+		assertSame("thrownException should be passed to onError",
+				thrownException, responseObserver.reportedError);
 		assertEquals("2 messages should be written",
 				2, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
