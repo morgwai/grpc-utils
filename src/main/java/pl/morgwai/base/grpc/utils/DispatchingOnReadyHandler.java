@@ -152,8 +152,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		Function<Integer, ResponseT> messageProducer
 	) {
 		this(streamObserver, taskExecutor, numberOfTasks);
-		this.completionIndicator = (i) -> completionIndicator.apply(i);
-		this.messageProducer = (i) -> messageProducer.apply(i);
+		this.completionIndicator = completionIndicator::apply;
+		this.messageProducer = messageProducer::apply;
 		this.exceptionHandler = (i, e) -> {
 			if ( ! (e instanceof StatusRuntimeException)) {
 				synchronized (this) {
@@ -301,21 +301,32 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	void handleSingleReadinessCycle(Integer taskNumber) {
 		var ready = true;
 		try {
-			synchronized (this) {
-				ready = streamObserver.isReady();
-				if ( ! ready) taskRunning[taskNumber] = false;;
-			}
-			while (ready && ! isCompleted(taskNumber)) {
-				final var responseMessage = produceMessage(taskNumber);
+			if ( ! isCompleted(taskNumber)) {
 				synchronized (this) {
-					streamObserver.onNext(responseMessage);
 					ready = streamObserver.isReady();
-					if ( ! ready) taskRunning[taskNumber] = false;;
+					if ( ! ready) {
+						taskRunning[taskNumber] = false;
+						return;
+					}
 				}
+				do {
+					final var responseMessage = produceMessage(taskNumber);
+					var completed = isCompleted(taskNumber);
+					synchronized (this) {
+						streamObserver.onNext(responseMessage);
+						if (completed) break;  // don't check isReady, call onCompleted immediately
+						ready = streamObserver.isReady();
+						if ( ! ready) {
+							taskRunning[taskNumber] = false;
+							return;
+						}
+					}
+				} while (true);  // completed/unready cause break/return: no need for extra check
 			}
-			if (ready && completionCount.incrementAndGet() == numberOfTasks) {
+			if (completionCount.incrementAndGet() == numberOfTasks) {
 				streamObserver.onCompleted();
 			}
+			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
 		} catch (Throwable throwable) {
 			var toReport = handleException(taskNumber, throwable);
 			if (toReport != null) {
@@ -327,7 +338,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				}
 			}
 		} finally {
-			if (ready) cleanup(taskNumber);
+			if (ready) cleanup(taskNumber);  // only call on exception or completion
 		}
 	}
 }
