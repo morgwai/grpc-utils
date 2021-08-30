@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -138,11 +137,9 @@ public class ConcurrentRequestObserverTest {
 				numberOfRequests, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -172,11 +169,9 @@ public class ConcurrentRequestObserverTest {
 				numberOfRequests, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -204,9 +199,7 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -242,9 +235,7 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -280,9 +271,7 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -318,9 +307,7 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
 	}
 
 
@@ -356,19 +343,33 @@ public class ConcurrentRequestObserverTest {
 				final var responseCount = new AtomicInteger(0);
 				// produce each response asynchronously in about 1-3ms
 				for (int i = 0; i < responsesPerRequest; i++) {
-					userExecutor.execute(() -> {
-						// sleep time varies depending on request/response message counts
-						final var processingDelay = halfProcessingDelay +
-								((requestMessage.id + responseCount.get()) % halfProcessingDelay);
-						try {
-							Thread.sleep(processingDelay);
-						} catch (InterruptedException e) {}
-						individualObserver.onNext(
-								new ResponseMessage(requestMessage.id));
-						if (responseCount.incrementAndGet() == responsesPerRequest) {
-							individualObserver.onCompleted();
+					final var responseNumber = Integer.valueOf(i);
+					final var task = new Runnable() {
+
+						@Override
+						public void run() {
+							// sleep time varies depending on request/response message counts
+							final var processingDelay = halfProcessingDelay + (
+								(requestMessage.id + responseCount.get()) % halfProcessingDelay
+							);
+							try {
+								Thread.sleep(processingDelay);
+							} catch (InterruptedException e) {}
+							individualObserver.onNext(
+									new ResponseMessage(requestMessage.id));
+							if (responseCount.incrementAndGet() == responsesPerRequest) {
+								individualObserver.onCompleted();
+							}
 						}
-					});
+
+						@Override
+						public String toString() {
+							return "task: { requestId: " + requestMessage.id + ", responseNo: "
+									+ responseNumber + " }";
+						}
+					};
+					if (log.isLoggable(Level.FINER)) log.finer("scheduling " + task);
+					userExecutor.execute(task);
 				}
 			},
 			newErrorHandler(Thread.currentThread())
@@ -387,12 +388,8 @@ public class ConcurrentRequestObserverTest {
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
-		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on userExecutor",
-				userExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(userExecutor, "userExecutor");
 	}
 
 
@@ -411,6 +408,10 @@ public class ConcurrentRequestObserverTest {
 
 				individualObserver.setOnReadyHandler(() -> {
 					handlerCallCounters[requestMessage.id - 1]++;
+					if (log.isLoggable(Level.FINE)) {
+						log.fine("handler for request " + requestMessage.id + " called "
+								+ handlerCallCounters[requestMessage.id - 1] + " times");
+					}
 					synchronized (individualObserver) {
 						individualObserver.notify();
 					}
@@ -419,11 +420,10 @@ public class ConcurrentRequestObserverTest {
 				userExecutor.execute(() -> {
 					for (int i = 0; i < responsesPerRequest; i ++) {
 						synchronized (individualObserver) {
-							while ( ! individualObserver.isReady()) {
-								try {
-									individualObserver.wait();
-								} catch (InterruptedException e) {}
-							}
+							while ( ! individualObserver.isReady()
+									|| handlerCallCounters[requestMessage.id - 1] < 1) try {
+								individualObserver.wait();
+							} catch (InterruptedException e) {}
 						}
 						individualObserver.onNext(new ResponseMessage(requestMessage.id));
 					}
@@ -448,12 +448,8 @@ public class ConcurrentRequestObserverTest {
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
-		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on userExecutor",
-				userExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(userExecutor, "userExecutor");
 	}
 
 
@@ -524,12 +520,20 @@ public class ConcurrentRequestObserverTest {
 				responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.getSubmissionFailures().isEmpty());
-		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertTrue("no task scheduling failures should occur on userExecutor",
-				userExecutor.getSubmissionFailures().isEmpty());
+		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(userExecutor, "userExecutor");
+	}
+
+
+
+	public static void verifyExecutor(FailureTrackingThreadPoolExecutor executor, String name) {
+		assertTrue("no task scheduling failures should occur on " + name,
+				executor.getSubmissionFailures().isEmpty());
+		if (executor.isTerminated()) return;
+		final var stuckTasks = executor.shutdownNow();
+		if (stuckTasks.size() == 0) return;
+		for (var stuckTask: stuckTasks) log.severe("stuck " + stuckTask);
+		fail(name + " should shutdown cleanly");
 	}
 
 
@@ -573,18 +577,18 @@ public class ConcurrentRequestObserverTest {
 	 * <code>FINER</code> will log every message received/sent.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
-	static final Level LOG_LEVEL = Level.OFF;
+	static Level LOG_LEVEL = Level.SEVERE;
 
 	static final Logger log = Logger.getLogger(ConcurrentRequestObserverTest.class.getName());
 
 	@BeforeClass
 	public static void setupLogging() {
-		var handler = new ConsoleHandler();
-		handler.setLevel(LOG_LEVEL);
-		log.addHandler(handler);
+		try {
+			LOG_LEVEL = Level.parse(System.getProperty(
+					ConcurrentRequestObserverTest.class.getPackageName() + ".level"));
+		} catch (Exception e) {}
 		log.setLevel(LOG_LEVEL);
-		var responseObserverLog = FakeResponseObserver.getLogger();
-		responseObserverLog.addHandler(handler);
-		responseObserverLog.setLevel(LOG_LEVEL);
+		FakeResponseObserver.getLogger().setLevel(LOG_LEVEL);
+		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}
 }

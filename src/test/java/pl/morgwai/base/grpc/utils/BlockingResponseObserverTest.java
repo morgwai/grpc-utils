@@ -3,7 +3,6 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.LinkedList;
 import java.util.List;
-import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,7 +31,7 @@ public class BlockingResponseObserverTest {
 		receivedData = new LinkedList<>();
 		caughtThrowable = null;
 		responseObserver = new BlockingResponseObserver<>((msg) -> {
-			if (log.isLoggable(Level.FINEST)) log.finest("received " + msg);
+			if (log.isLoggable(Level.FINER)) log.finer("received " + msg);
 			receivedData.add(msg);
 		});
 		responseConsumer = new Thread(() -> {
@@ -138,17 +137,18 @@ public class BlockingResponseObserverTest {
 
 
 	// change the below value if you need logging
-	// FINEST will log every message received
-	static final Level LOG_LEVEL = Level.OFF;
+	// FINER will log every message received
+	static Level LOG_LEVEL = Level.SEVERE;
 
-	static final Logger log =
-			Logger.getLogger(BlockingResponseObserverTest.class.getName());
+	static final Logger log = Logger.getLogger(BlockingResponseObserverTest.class.getName());
 
 	@BeforeClass
 	public static void setupLogging() {
-		var handler = new ConsoleHandler();
-		handler.setLevel(LOG_LEVEL);
-		log.addHandler(handler);
+		try {
+			LOG_LEVEL = Level.parse(System.getProperty(
+					BlockingResponseObserverTest.class.getPackageName() + ".level"));
+		} catch (Exception e) {}
 		log.setLevel(LOG_LEVEL);
+		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}
 }
