@@ -139,8 +139,8 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
 	}
@@ -173,8 +173,8 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
 	}
@@ -205,8 +205,8 @@ public class ConcurrentRequestObserverTest {
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -243,8 +243,8 @@ public class ConcurrentRequestObserverTest {
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -281,8 +281,8 @@ public class ConcurrentRequestObserverTest {
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -319,8 +319,8 @@ public class ConcurrentRequestObserverTest {
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		assertTrue("executor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -388,11 +388,11 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -449,11 +449,11 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -525,11 +525,11 @@ public class ConcurrentRequestObserverTest {
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 

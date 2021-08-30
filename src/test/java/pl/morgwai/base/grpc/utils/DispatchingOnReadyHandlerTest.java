@@ -93,11 +93,11 @@ public class DispatchingOnReadyHandlerTest {
 		assertNull("no exception should be thrown", caughtError);
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -147,11 +147,11 @@ public class DispatchingOnReadyHandlerTest {
 					1, cleanupCounters[i]);
 		}
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -209,11 +209,11 @@ public class DispatchingOnReadyHandlerTest {
 				1, responseObserver.getFinalizedCount());
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 
@@ -265,11 +265,11 @@ public class DispatchingOnReadyHandlerTest {
 				1, responseObserver.getFinalizedCount());
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		assertTrue("grpcExecutor should shutdown cleanly", grpcInternalExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on grpcInternalExecutor",
-				grpcInternalExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on grpcInternalExecutor",
+				grpcInternalExecutor.getSubmissionFailures().isEmpty());
 		assertTrue("userExecutor should shutdown cleanly", userExecutor.isTerminated());
-		assertFalse("no task scheduling failures should occur on userExecutor",
-				userExecutor.hadFailures());
+		assertTrue("no task scheduling failures should occur on userExecutor",
+				userExecutor.getSubmissionFailures().isEmpty());
 	}
 
 

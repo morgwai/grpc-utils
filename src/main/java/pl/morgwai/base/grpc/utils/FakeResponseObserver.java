@@ -450,25 +450,38 @@ public class FakeResponseObserver<ResponseT>
 
 
 		@Override
-		public void execute(Runnable command) {
+		public void execute(Runnable task) {
 			try {
-				super.execute(command);
+				super.execute(task);
 			} catch (Exception e) {
-				log.log(Level.SEVERE, command.toString(), e);
-				failure = true;
+				log.log(Level.SEVERE, "failure submitting " + task.toString(), e);
+				submissionFailures.add(new SubmissionFailure(task, e));
 			}
 		}
 
 		/**
-		 * {@code true} if there were attempts to execute more tasks after shutdown.
+		 * List of all submission failures that occurred.
 		 */
-		public boolean hadFailures() { return failure; }
-		volatile boolean failure = false;
+		public List<SubmissionFailure> getSubmissionFailures() { return submissionFailures; }
+		List<SubmissionFailure> submissionFailures = new LinkedList<>();
 
 
 
 		public FailureTrackingThreadPoolExecutor(int poolSize) {
 			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+		}
+
+
+
+		public static class SubmissionFailure {
+
+			public Runnable task;
+			public Exception exception;
+
+			public SubmissionFailure(Runnable task, Exception exception) {
+				this.task = task;
+				this.exception = exception;
+			}
 		}
 	}
 
@@ -482,30 +495,26 @@ public class FakeResponseObserver<ResponseT>
 		public boolean tryLock(String label) {
 			boolean result = tryLock();
 			if (result) {
-				if (log.isLoggable(Level.FINEST) ) {
-					StringBuilder lockLog = new StringBuilder(Thread.currentThread().getName())
-							.append(": ");
-					for (int i = 0; i < labels.size(); i++) lockLog.append("  ");
-					lockLog.append(label).append(" locked");
-					log.finest(lockLog.toString());
-				}
 				labels.add(label);
+				if (log.isLoggable(Level.FINEST) ) {
+					StringBuilder lockLog = new StringBuilder("locked   ");
+					for (final var lockLabel: labels) lockLog.append(lockLabel).append('.');
+					log.log(Level.FINEST, lockLog.toString(), new Exception());
+				}
 			} else {
-				log.severe(Thread.currentThread().getName() + ": failed to lock " + label);
+				log.log(Level.SEVERE, "failed to lock " + label, new Exception());
 			}
 			return result;
 		}
 
 		@Override
 		public void unlock() {
-			String label = labels.remove(labels.size() - 1);
 			if (log.isLoggable(Level.FINEST) ) {
-				StringBuilder lockLog = new StringBuilder(Thread.currentThread().getName())
-						.append(": ");
-				for (int i = 0; i < labels.size(); i++) lockLog.append("  ");
-				lockLog.append(label).append(" unlocked");
-				log.finest(lockLog.toString());
+				StringBuilder lockLog = new StringBuilder("unlocked ");
+				for (final var lockLabel: labels) lockLog.append(lockLabel).append('.');
+				log.log(Level.FINEST, lockLog.toString(), new Exception());
 			}
+			labels.remove(labels.size() - 1);
 			super.unlock();
 		}
 	}
