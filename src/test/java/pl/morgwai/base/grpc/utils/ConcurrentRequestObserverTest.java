@@ -530,9 +530,14 @@ public class ConcurrentRequestObserverTest {
 		assertTrue("no task scheduling failures should occur on " + name,
 				executor.getSubmissionFailures().isEmpty());
 		if (executor.isTerminated()) return;
-		final var stuckTasks = executor.shutdownNow();
-		if (stuckTasks.size() == 0) return;
-		for (var stuckTask: stuckTasks) log.severe("stuck " + stuckTask);
+		final int activeCount = executor.getActiveCount();
+		final var unstartedTasks = executor.shutdownNow();
+		if (unstartedTasks.size() == 0 && activeCount == 0) {
+			log.warning(name + " not terminated, but no remaining tasks :?");
+			return;
+		};
+		if (activeCount != 0) log.severe(name + " has " + activeCount + " active tasks remaining");
+		for (var task: unstartedTasks) log.severe(name + ": unstarted " + task);
 		fail(name + " should shutdown cleanly");
 	}
 
