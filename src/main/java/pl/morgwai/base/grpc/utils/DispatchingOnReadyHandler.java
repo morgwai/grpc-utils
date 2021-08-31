@@ -281,7 +281,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
-	 * Dispatches tasks to handle a single cycle of {@link #responseObserver}'s readiness.
+	 * Dispatches tasks to handle a single cycle of observer's readiness.
 	 */
 	public synchronized void run() {
 		if (errorReported) return;

@@ -69,13 +69,13 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	 * <p>
 	 * {@code singleRequestMessageResponseObserver.onError(...)} will call
 	 * {@link #onError(Throwable)} from the parent response observer (supplied via
-	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver) constructor} param).</p>
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int) constructor} param).</p>
 	 * <p>
 	 * {@code singleRequestMessageResponseObserver.setMessageCompression()} has no effect:
 	 * compression should be set using the parent response observer.</p>
 	 * <p>
 	 * Default implementation of this method calls {@link #requestHandler} supplied via the param of
-	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
 	 * constructor.</p>
 	 */
 	protected void onRequest(
@@ -91,7 +91,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	/**
 	 * See {@link StreamObserver#onError(Throwable)} for details.
 	 * Default implementation calls {@link #errorHandler} supplied via the param of
-	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, BiConsumer, Consumer)}
+	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
 	 * constructor.
 	 */
 	@Override
