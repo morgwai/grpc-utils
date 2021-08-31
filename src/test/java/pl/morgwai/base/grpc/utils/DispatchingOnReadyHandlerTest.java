@@ -10,7 +10,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingThreadPoolExecutor;
+import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingExecutor;
 
 import static org.junit.Assert.*;
 import static pl.morgwai.base.grpc.utils.ConcurrentRequestObserverTest.verifyExecutor;
@@ -29,12 +29,12 @@ public class DispatchingOnReadyHandlerTest {
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
 	 * observer as ready, etc.
 	 */
-	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+	FailureTrackingExecutor grpcInternalExecutor;
 
 	/**
 	 * Executor passed as handler's constructor param.
 	 */
-	FailureTrackingThreadPoolExecutor userExecutor;
+	FailureTrackingExecutor userExecutor;
 
 	int responseCount;
 	int[] responseCounters;
@@ -49,9 +49,9 @@ public class DispatchingOnReadyHandlerTest {
 		responseCount = 0;
 		caughtError = null;
 		cleanupCount = 0;
-		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(5);
+		grpcInternalExecutor = new FailureTrackingExecutor("grpcInternalExecutor", 5);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
-		userExecutor = new FailureTrackingThreadPoolExecutor(5);
+		userExecutor = new FailureTrackingExecutor("userExecutor", 5);
 	}
 
 

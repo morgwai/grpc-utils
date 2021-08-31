@@ -37,7 +37,7 @@ import io.grpc.stub.StreamObserver;
  *   <li>Client canceling can be simulated using {@link #cancel()} method.</li>
  *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
  *     {@link #getReportedError()} methods and by shutting down and inspecting
- *     {@link FailureTrackingThreadPoolExecutor} supplied to the constructor.</li>
+ *     {@link FailureTrackingExecutor} supplied to the constructor.</li>
  * </ol>
  */
 public class FakeResponseObserver<ResponseT>
@@ -51,11 +51,11 @@ public class FakeResponseObserver<ResponseT>
 	 * than the number of requests concurrently processed by the code under test (usually determined
 	 * by the argument of the initial call to {@link ServerCallStreamObserver#request(int)}.
 	 */
-	public FakeResponseObserver(FailureTrackingThreadPoolExecutor grpcInternalExecutor) {
+	public FakeResponseObserver(FailureTrackingExecutor grpcInternalExecutor) {
 		this.grpcInternalExecutor = grpcInternalExecutor;
 	}
 
-	final FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+	final FailureTrackingExecutor grpcInternalExecutor;
 
 
 
@@ -442,46 +442,24 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * Tracks task scheduling failures, occurring mainly on attempts to execute a task after
-	 * the executor was shutdown.
+	 * Tracks task rejections, occurring mainly on attempts to execute after the shutdown.
 	 */
-	public static class FailureTrackingThreadPoolExecutor extends ThreadPoolExecutor {
-
-
-
-		@Override
-		public void execute(Runnable task) {
-			try {
-				super.execute(task);
-			} catch (Exception e) {
-				log.log(Level.SEVERE, "failure submitting " + task.toString(), e);
-				submissionFailures.add(new SubmissionFailure(task, e));
-			}
-		}
+	public static class FailureTrackingExecutor extends ThreadPoolExecutor {
 
 		/**
-		 * List of all submission failures that occurred.
+		 * List of all rejected tasks.
 		 */
-		public List<SubmissionFailure> getSubmissionFailures() { return submissionFailures; }
-		List<SubmissionFailure> submissionFailures = new LinkedList<>();
+		public List<Runnable> getRejectedTasks() { return rejectedTasks; }
+		List<Runnable> rejectedTasks = new LinkedList<>();
 
 
 
-		public FailureTrackingThreadPoolExecutor(int poolSize) {
+		public FailureTrackingExecutor(String name, int poolSize) {
 			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
-		}
-
-
-
-		public static class SubmissionFailure {
-
-			public Runnable task;
-			public Exception exception;
-
-			public SubmissionFailure(Runnable task, Exception exception) {
-				this.task = task;
-				this.exception = exception;
-			}
+			setRejectedExecutionHandler((task, executor) -> {
+				log.log(Level.SEVERE, name + " rejected " + task.toString(), new Exception());
+				rejectedTasks.add(task);
+			});
 		}
 	}
 

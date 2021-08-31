@@ -17,7 +17,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingThreadPoolExecutor;
+import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingExecutor;
 
 import static org.junit.Assert.*;
 
@@ -28,11 +28,11 @@ public class ConcurrentRequestObserverTest {
 
 
 	FakeResponseObserver<ResponseMessage> responseObserver;
-	FailureTrackingThreadPoolExecutor grpcInternalExecutor;
+	FailureTrackingExecutor grpcInternalExecutor;
 
 	@Before
 	public void setup() {
-		grpcInternalExecutor = new FailureTrackingThreadPoolExecutor(10);
+		grpcInternalExecutor = new FailureTrackingExecutor("grpcInternalExecutor", 10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
 	}
 
@@ -335,7 +335,8 @@ public class ConcurrentRequestObserverTest {
 		final int responsesPerRequest,
 		final int numberOfConcurrentRequests
 	) throws InterruptedException {
-		final var userExecutor = new FailureTrackingThreadPoolExecutor(numberOfConcurrentRequests);
+		final var userExecutor = new FailureTrackingExecutor(
+				"userExecutor", numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
@@ -396,7 +397,7 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testIndividualOnReadyHandlersAreCalledProperly() throws InterruptedException {
-		final var userExecutor = new FailureTrackingThreadPoolExecutor(5);
+		final var userExecutor = new FailureTrackingExecutor("userExecutor", 5);
 		final int[] handlerCallCounters = {0, 0};
 		final var numberOfRequests = 2;
 		final int responsesPerRequest = 2;
@@ -480,7 +481,8 @@ public class ConcurrentRequestObserverTest {
 		final int executorThreads
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
-		final var userExecutor = new FailureTrackingThreadPoolExecutor(executorThreads);
+		final var userExecutor = new FailureTrackingExecutor(
+				"userExecutor", executorThreads);
 		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {
@@ -526,9 +528,9 @@ public class ConcurrentRequestObserverTest {
 
 
 
-	public static void verifyExecutor(FailureTrackingThreadPoolExecutor executor, String name) {
+	public static void verifyExecutor(FailureTrackingExecutor executor, String name) {
 		assertTrue("no task scheduling failures should occur on " + name,
-				executor.getSubmissionFailures().isEmpty());
+				executor.getRejectedTasks().isEmpty());
 		if (executor.isTerminated()) return;
 		final int activeCount = executor.getActiveCount();
 		final var unstartedTasks = executor.shutdownNow();
