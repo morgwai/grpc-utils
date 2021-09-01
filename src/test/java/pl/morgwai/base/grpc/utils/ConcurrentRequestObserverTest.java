@@ -448,10 +448,14 @@ public class ConcurrentRequestObserverTest {
 				});
 
 				userExecutor.execute(() -> {
+					final var requestId = requestMessage.id;
 					for (int i = 0; i < responsesPerRequest; i ++) {
 						synchronized (individualObserver) {
-							while ( ! individualObserver.isReady()
-									|| handlerCallCounters[requestMessage.id - 1] < 1) try {
+							while (
+								! individualObserver.isReady()
+								|| handlerCallCounters[requestId - 1] < 1
+								|| (requestId == 2 && handlerCallCounters[1] <= i)
+							) try {
 								individualObserver.wait();
 							} catch (InterruptedException e) {}
 						}
