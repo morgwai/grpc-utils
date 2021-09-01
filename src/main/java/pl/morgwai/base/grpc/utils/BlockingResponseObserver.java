@@ -64,7 +64,12 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 		if (timeoutMillis == 0l) {
 			while ( ! completed) wait();
 		} else {
-			if ( ! completed) wait(timeoutMillis);
+			final var startMillis = System.currentTimeMillis();
+			var currentMillis = startMillis;
+			while ( ! completed && currentMillis - startMillis < timeoutMillis) {
+				wait(timeoutMillis + startMillis - currentMillis);
+				currentMillis = System.currentTimeMillis();
+			}
 		}
 		if (error != null) throw new ErrorReportedException(error);
 		return completed;
