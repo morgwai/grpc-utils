@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -151,8 +152,8 @@ public class FakeResponseObserver<ResponseT>
 
 			// mark observer unready and schedule becoming ready again
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
-				log.fine("response observer unready");
 				ready = false;
+				log.fine("marked response observer unready");
 				grpcInternalExecutor.execute(new Runnable() {
 
 					@Override public void run() { markObserverReady(unreadyDurationMillis); }
@@ -171,7 +172,7 @@ public class FakeResponseObserver<ResponseT>
 		} catch (InterruptedException e) {}
 		synchronized (listenerLock) {
 			if ( ! ready) {
-				log.fine("response observer ready");
+				log.fine("marking response observer ready again");
 				ready = true;
 				if (onReadyHandler != null) onReadyHandler.run();
 			}
@@ -280,13 +281,28 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
-	 * {@link #onError(Throwable)}) occurs or timeout exceeds.
+	 * {@link #onError(Throwable)}) occurs or {@code timoutMillis} passes.
+	 * @throws RuntimeException if {@code timoutMillis} is exceeded.
 	 */
 	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
+		final var startMillis = System.currentTimeMillis();
+		var currentMillis = startMillis;
 		synchronized (finalizationGuard) {
-			if (finalizedCount == 0 && reportedError == null) finalizationGuard.wait(timeoutMillis);
+			while (finalizedCount == 0 && reportedError == null
+					&& currentMillis - startMillis < timeoutMillis) {
+				finalizationGuard.wait(timeoutMillis + startMillis - currentMillis);
+				currentMillis = System.currentTimeMillis();
+			}
 		}
-		if (finalizedCount == 0 && reportedError == null) throw new RuntimeException("timeout");
+		if (finalizedCount == 0 && reportedError == null) {
+			throw new RuntimeException("timeout awaiting for finalization");
+		}
+	}
+
+
+
+	public static long getRemainingMillis(long startMillis, long timeoutMillis) {
+		return Math.max(1l, timeoutMillis + startMillis - System.currentTimeMillis());
 	}
 
 
@@ -452,14 +468,60 @@ public class FakeResponseObserver<ResponseT>
 		public List<Runnable> getRejectedTasks() { return rejectedTasks; }
 		List<Runnable> rejectedTasks = new LinkedList<>();
 
+		public String getName() { return name; }
+		final String name;
+
 
 
 		public FailureTrackingExecutor(String name, int poolSize) {
 			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+			this.name = name;
 			setRejectedExecutionHandler((task, executor) -> {
 				log.log(Level.SEVERE, name + " rejected " + task.toString(), new Exception());
 				rejectedTasks.add(task);
 			});
+		}
+
+
+
+		@Override
+		public void execute(Runnable task) {
+			final int taskId = taskIdSequence.incrementAndGet();
+			if (log.isLoggable(Level.FINER)) {
+				log.finer(name + " scheduling " + taskId + ": " + task);
+			}
+			super.execute(new Runnable() {
+
+				@Override public void run() {
+					if (log.isLoggable(Level.FINER)) {
+						log.finer(name + " starting " + taskId + ": " + task);
+					}
+					task.run();
+					if (log.isLoggable(Level.FINER)) {
+						log.finer(name + " completed " + taskId + ": " + task);
+					}
+				}
+
+				@Override public String toString() { return "" + taskId + ": " + task; }
+			});
+		}
+
+		final AtomicInteger taskIdSequence = new AtomicInteger(0);
+
+
+
+		@Override
+		public void shutdown() {
+			log.fine(name + " shutting down");
+			super.shutdown();
+		}
+
+
+
+		@Override
+		public List<Runnable> shutdownNow() {
+			log.severe(name + " shutting down forcibly");
+			return super.shutdownNow();
 		}
 	}
 
@@ -501,7 +563,8 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
-	 * <code>FINER</code> will log every message sent to the observer.<br/>
+	 * <code>FINER</code> will log every message sent to the observer and every task dispatched
+	 * to {@link FailureTrackingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static final Logger log = Logger.getLogger(FakeResponseObserver.class.getName());

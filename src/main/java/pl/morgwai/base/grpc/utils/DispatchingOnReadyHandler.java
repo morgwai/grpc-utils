@@ -281,6 +281,16 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
+	 * For debugging and logging.
+	 */
+	public void setTaskToStringHandler(Function<Integer, String> taskToStringHandler) {
+		this.taskToStringHandler = taskToStringHandler;
+	}
+	Function<Integer, String> taskToStringHandler;
+
+
+
+	/**
 	 * Dispatches tasks to handle a single cycle of observer's readiness.
 	 */
 	public synchronized void run() {
@@ -292,7 +302,16 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			if (taskRunning[i]) continue;
 			taskRunning[i] = true;
 			final var taskNumber = Integer.valueOf(i);
-			taskExecutor.execute(() -> handleSingleReadinessCycle(taskNumber));
+			taskExecutor.execute(new Runnable() {
+
+				@Override public void run() { handleSingleReadinessCycle(taskNumber); }
+
+				@Override public String toString() {
+					return taskToStringHandler != null
+							? taskToStringHandler.apply(taskNumber)
+							: "dispatchedOnReadyHandler-task-" + taskNumber;
+				}
+			});
 		}
 	}
 

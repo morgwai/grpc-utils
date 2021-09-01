@@ -27,6 +27,13 @@ public class ConcurrentRequestObserverTest {
 
 
 
+	/**
+	 * Default timeout for most tests. Some tests use their own value.
+	 */
+	public static final long TIMEOUT_MILLIS = 500l;
+
+
+
 	FakeResponseObserver<ResponseMessage> responseObserver;
 	FailureTrackingExecutor grpcInternalExecutor;
 
@@ -127,11 +134,13 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -139,7 +148,7 @@ public class ConcurrentRequestObserverTest {
 				1, responseObserver.getFinalizedCount());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -159,11 +168,13 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -171,7 +182,7 @@ public class ConcurrentRequestObserverTest {
 				1, responseObserver.getFinalizedCount());
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -192,14 +203,16 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -226,16 +239,21 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
-			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
+			while (exceptionThrownHolder[0] == null) {
+				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+			}
 		}
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -262,16 +280,21 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
-			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
+			while (exceptionThrownHolder[0] == null) {
+				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+			}
 		}
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -298,16 +321,21 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
 		synchronized (exceptionThrownHolder) {
-			if (exceptionThrownHolder[0] == null) exceptionThrownHolder.wait();
+			while (exceptionThrownHolder[0] == null) {
+				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+			}
 		}
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
+		verifyExecutor(grpcInternalExecutor);
 	}
 
 
@@ -316,7 +344,7 @@ public class ConcurrentRequestObserverTest {
 	public void testAsyncSequentialProcessingOf40Requests() throws InterruptedException {
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(40, 3l, 4l, 1, 1);
+		testAsyncProcessing(40, 3l, 4l, 1, 1, 2000l);
 		assertTrue("messages should be written in order",
 				Comparators.isInStrictOrder(responseObserver.getOutputData(), responseComparator));
 	}
@@ -325,7 +353,7 @@ public class ConcurrentRequestObserverTest {
 	public void testAsyncProcessingOf100RequestsIn5Threads() throws InterruptedException {
 		responseObserver.outputBufferSize = 13;
 		responseObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(100, 3l, 4l, 3, 5);
+		testAsyncProcessing(100, 3l, 4l, 3, 5, 2000l);
 	}
 
 	void testAsyncProcessing(
@@ -333,7 +361,8 @@ public class ConcurrentRequestObserverTest {
 		final long maxRequestDeliveryDelayMillis,
 		final long maxProcessingDelayMillis,
 		final int responsesPerRequest,
-		final int numberOfConcurrentRequests
+		final int numberOfConcurrentRequests,
+		final long timoutMillis
 	) throws InterruptedException {
 		final var userExecutor = new FailureTrackingExecutor(
 				"userExecutor", numberOfConcurrentRequests);
@@ -342,13 +371,12 @@ public class ConcurrentRequestObserverTest {
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {
 				final var responseCount = new AtomicInteger(0);
-				// produce each response asynchronously in about 1-3ms
 				for (int i = 0; i < responsesPerRequest; i++) {
+					// produce each response in a separate task in about 1-3ms
 					final var responseNumber = Integer.valueOf(i);
 					final var task = new Runnable() {
 
-						@Override
-						public void run() {
+						@Override public void run() {
 							// sleep time varies depending on request/response message counts
 							final var processingDelay = halfProcessingDelay + (
 								(requestMessage.id + responseCount.get()) % halfProcessingDelay
@@ -363,34 +391,35 @@ public class ConcurrentRequestObserverTest {
 							}
 						}
 
-						@Override
-						public String toString() {
-							return "task: { requestId: " + requestMessage.id + ", responseNo: "
-									+ responseNumber + " }";
+						@Override public String toString() {
+							return "task: { requestId: " + requestMessage.id
+									+ ", responseNo: " + responseNumber + " }";
 						}
 					};
-					if (log.isLoggable(Level.FINER)) log.finer("scheduling " + task);
 					userExecutor.execute(task);
 				}
 			},
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(
+				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
-		verifyExecutor(userExecutor, "userExecutor");
+		verifyExecutor(grpcInternalExecutor);
+		verifyExecutor(userExecutor);
 	}
 
 
@@ -409,11 +438,11 @@ public class ConcurrentRequestObserverTest {
 
 				individualObserver.setOnReadyHandler(() -> {
 					handlerCallCounters[requestMessage.id - 1]++;
-					if (log.isLoggable(Level.FINE)) {
-						log.fine("handler for request " + requestMessage.id + " called "
-								+ handlerCallCounters[requestMessage.id - 1] + " times");
-					}
 					synchronized (individualObserver) {
+						if (log.isLoggable(Level.FINE)) {
+							log.fine("handler for request " + requestMessage.id + " called "
+									+ handlerCallCounters[requestMessage.id - 1] + " times");
+						}
 						individualObserver.notify();
 					}
 				});
@@ -434,13 +463,16 @@ public class ConcurrentRequestObserverTest {
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver, new RequestProducer(numberOfRequests));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(
+				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
 
 		assertEquals("handler of the active observer should be called", 2, handlerCallCounters[1]);
 		assertEquals("handler of and finalized observer should not be called",
@@ -449,8 +481,8 @@ public class ConcurrentRequestObserverTest {
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
-		verifyExecutor(userExecutor, "userExecutor");
+		verifyExecutor(grpcInternalExecutor);
+		verifyExecutor(userExecutor);
 	}
 
 
@@ -459,7 +491,7 @@ public class ConcurrentRequestObserverTest {
 	public void testDispatchingOnReadyHandlerIntegrationSingleThread() throws InterruptedException {
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(10, 0l, 0l, 1, 10, 1, 2);
+		testDispatchingOnReadyHandlerIntegration(10, 0l, 0l, 1, 10, 1, 2, 2000l);
 		assertTrue("messages should be written in order",
 				Comparators.isInOrder(responseObserver.getOutputData(), responseComparator));
 	}
@@ -468,7 +500,7 @@ public class ConcurrentRequestObserverTest {
 	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
 		responseObserver.outputBufferSize = 6;
 		responseObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(20, 3l, 4l, 3, 5, 3, 5);
+		testDispatchingOnReadyHandlerIntegration(20, 3l, 4l, 3, 5, 3, 5, 2000l);
 	}
 
 	void testDispatchingOnReadyHandlerIntegration(
@@ -478,7 +510,8 @@ public class ConcurrentRequestObserverTest {
 		final int tasksPerRequest,
 		final int responsesPerTask,
 		final int numberOfConcurrentRequests,
-		final int executorThreads
+		final int executorThreads,
+		final long timoutMillis
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var userExecutor = new FailureTrackingExecutor(
@@ -487,7 +520,7 @@ public class ConcurrentRequestObserverTest {
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {
 				final int[] responseCounters = new int[tasksPerRequest];
-				individualObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+				final var onReadyHandler = new DispatchingOnReadyHandler<>(
 					individualObserver,
 					userExecutor,
 					tasksPerRequest,
@@ -503,44 +536,63 @@ public class ConcurrentRequestObserverTest {
 						responseCounters[i]++;
 						return new ResponseMessage(requestMessage.id);
 					}
-				));
+				);
+				onReadyHandler.setTaskToStringHandler((i) ->
+					"onReadyHandler: { requestId: " + requestMessage.id
+					+ ", task: " + i
+					+ ", responseNo: " + responseCounters[i] + " }"
+				);
+				individualObserver.setOnReadyHandler(onReadyHandler);
 			},
 			newErrorHandler(Thread.currentThread())
 		);
 
+		final var startMillis = System.currentTimeMillis();
 		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
-		responseObserver.awaitFinalization(10_000l);
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(100l, TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(10l, TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(
+				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
+		userExecutor.awaitTermination(
+				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * tasksPerRequest * responsesPerTask,
 				responseObserver.getOutputData().size());
 		assertEquals("response should be marked completed 1 time",
 				1, responseObserver.getFinalizedCount());
-		verifyExecutor(grpcInternalExecutor, "grpcInternalExecutor");
-		verifyExecutor(userExecutor, "userExecutor");
+		verifyExecutor(grpcInternalExecutor);
+		verifyExecutor(userExecutor);
 	}
 
 
 
-	public static void verifyExecutor(FailureTrackingExecutor executor, String name) {
-		assertTrue("no task scheduling failures should occur on " + name,
+	public static void verifyExecutor(FailureTrackingExecutor executor) {
+		assertTrue("no task scheduling failures should occur on " + executor.getName(),
 				executor.getRejectedTasks().isEmpty());
 		if (executor.isTerminated()) return;
 		final int activeCount = executor.getActiveCount();
 		final var unstartedTasks = executor.shutdownNow();
 		if (unstartedTasks.size() == 0 && activeCount == 0) {
-			log.warning(name + " not terminated, but no remaining tasks :?");
+			log.warning(executor.getName() + " not terminated, but no remaining tasks :?");
 			return;
 		};
-		if (activeCount != 0) log.severe(name + " has " + activeCount + " active tasks remaining");
-		for (var task: unstartedTasks) log.severe(name + ": unstarted " + task);
-		fail(name + " should shutdown cleanly");
+		log.severe(executor.getName() + " has " + activeCount + " active tasks remaining");
+		for (var task: unstartedTasks) log.severe(executor.getName() + " unstarted " + task);
+		fail(executor.getName() + " should shutdown cleanly");
+	}
+
+
+
+	public static long getRemainingMillis(long startMillis, long timeoutMillis) {
+		return Math.max(1l, timeoutMillis + startMillis - System.currentTimeMillis());
+	}
+
+	public static long getRemainingMillis(long startMillis) {
+		return getRemainingMillis(startMillis, TIMEOUT_MILLIS);
 	}
 
 
@@ -581,10 +633,11 @@ public class ConcurrentRequestObserverTest {
 	/**
 	 * Change the below value if you need logging:<br/>
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
-	 * <code>FINER</code> will log every message received/sent.<br/>
+	 * <code>FINER</code> will log every message received/sent and every task dispatched
+	 * to {@link FailureTrackingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
-	static Level LOG_LEVEL = Level.SEVERE;
+	static Level LOG_LEVEL = Level.WARNING;
 
 	static final Logger log = Logger.getLogger(ConcurrentRequestObserverTest.class.getName());
 
