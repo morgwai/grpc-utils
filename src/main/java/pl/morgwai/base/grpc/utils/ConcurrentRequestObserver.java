@@ -185,6 +185,9 @@ public class ConcurrentRequestObserver<RequestT, ResponseT>
 	public void onNext(RequestT request) {
 		final var individualObserver = newSingleRequestMessageResponseObserver();
 		onRequest(request, individualObserver);
+		synchronized (this) {
+			 if ( ! responseObserver.isReady()) return;
+		}
 		synchronized (individualObserver) {
 			if (individualObserver.onReadyHandler != null) {
 				individualObserver.onReadyHandler.run();
