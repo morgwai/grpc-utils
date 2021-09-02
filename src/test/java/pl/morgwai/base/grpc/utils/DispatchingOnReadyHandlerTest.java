@@ -10,7 +10,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingExecutor;
+import pl.morgwai.base.grpc.utils.FakeResponseObserver.LoggingExecutor;
 
 import static org.junit.Assert.*;
 import static pl.morgwai.base.grpc.utils.ConcurrentRequestObserverTest.*;
@@ -29,12 +29,12 @@ public class DispatchingOnReadyHandlerTest {
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
 	 * observer as ready, etc.
 	 */
-	FailureTrackingExecutor grpcInternalExecutor;
+	LoggingExecutor grpcInternalExecutor;
 
 	/**
 	 * Executor passed as handler's constructor param.
 	 */
-	FailureTrackingExecutor userExecutor;
+	LoggingExecutor userExecutor;
 
 	int responseCount;
 	int[] responseCounters;
@@ -49,9 +49,9 @@ public class DispatchingOnReadyHandlerTest {
 		responseCount = 0;
 		caughtError = null;
 		cleanupCount = 0;
-		grpcInternalExecutor = new FailureTrackingExecutor("grpcInternalExecutor", 5);
+		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 5);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
-		userExecutor = new FailureTrackingExecutor("userExecutor", 5);
+		userExecutor = new LoggingExecutor("userExecutor", 5);
 	}
 
 
@@ -270,7 +270,7 @@ public class DispatchingOnReadyHandlerTest {
 	 * Change the below value if you need logging:<br/>
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
 	 * <code>FINER</code> will log every message received/sent and every task dispatched
-	 * to {@link FailureTrackingExecutor}.<br/>
+	 * to {@link LoggingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static Level LOG_LEVEL = Level.WARNING;

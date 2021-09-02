@@ -17,7 +17,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import pl.morgwai.base.grpc.utils.FakeResponseObserver.FailureTrackingExecutor;
+import pl.morgwai.base.grpc.utils.FakeResponseObserver.LoggingExecutor;
 
 import static org.junit.Assert.*;
 
@@ -35,11 +35,11 @@ public class ConcurrentRequestObserverTest {
 
 
 	FakeResponseObserver<ResponseMessage> responseObserver;
-	FailureTrackingExecutor grpcInternalExecutor;
+	LoggingExecutor grpcInternalExecutor;
 
 	@Before
 	public void setup() {
-		grpcInternalExecutor = new FailureTrackingExecutor("grpcInternalExecutor", 10);
+		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 10);
 		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
 	}
 
@@ -364,7 +364,7 @@ public class ConcurrentRequestObserverTest {
 		final int numberOfConcurrentRequests,
 		final long timoutMillis
 	) throws InterruptedException {
-		final var userExecutor = new FailureTrackingExecutor(
+		final var userExecutor = new LoggingExecutor(
 				"userExecutor", numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var requestObserver = newConcurrentRequestObserver(
@@ -426,7 +426,7 @@ public class ConcurrentRequestObserverTest {
 
 	@Test
 	public void testIndividualOnReadyHandlersAreCalledProperly() throws InterruptedException {
-		final var userExecutor = new FailureTrackingExecutor("userExecutor", 5);
+		final var userExecutor = new LoggingExecutor("userExecutor", 5);
 		final int[] handlerCallCounters = {0, 0};
 		final var numberOfRequests = 2;
 		final int responsesPerRequest = 2;
@@ -518,7 +518,7 @@ public class ConcurrentRequestObserverTest {
 		final long timoutMillis
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
-		final var userExecutor = new FailureTrackingExecutor(
+		final var userExecutor = new LoggingExecutor(
 				"userExecutor", executorThreads);
 		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
@@ -574,7 +574,7 @@ public class ConcurrentRequestObserverTest {
 
 
 
-	public static void verifyExecutor(FailureTrackingExecutor executor) {
+	public static void verifyExecutor(LoggingExecutor executor) {
 		assertTrue("no task scheduling failures should occur on " + executor.getName(),
 				executor.getRejectedTasks().isEmpty());
 		if (executor.isTerminated()) return;
@@ -638,7 +638,7 @@ public class ConcurrentRequestObserverTest {
 	 * Change the below value if you need logging:<br/>
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
 	 * <code>FINER</code> will log every message received/sent and every task dispatched
-	 * to {@link FailureTrackingExecutor}.<br/>
+	 * to {@link LoggingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static Level LOG_LEVEL = Level.WARNING;

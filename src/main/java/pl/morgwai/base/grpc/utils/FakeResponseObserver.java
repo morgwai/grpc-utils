@@ -38,7 +38,7 @@ import io.grpc.stub.StreamObserver;
  *   <li>Client canceling can be simulated using {@link #cancel()} method.</li>
  *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
  *     {@link #getReportedError()} methods and by shutting down and inspecting
- *     {@link FailureTrackingExecutor} supplied to the constructor.</li>
+ *     {@link LoggingExecutor} supplied to the constructor.</li>
  * </ol>
  */
 public class FakeResponseObserver<ResponseT>
@@ -52,11 +52,11 @@ public class FakeResponseObserver<ResponseT>
 	 * than the number of requests concurrently processed by the code under test (usually determined
 	 * by the argument of the initial call to {@link ServerCallStreamObserver#request(int)}.
 	 */
-	public FakeResponseObserver(FailureTrackingExecutor grpcInternalExecutor) {
+	public FakeResponseObserver(LoggingExecutor grpcInternalExecutor) {
 		this.grpcInternalExecutor = grpcInternalExecutor;
 	}
 
-	final FailureTrackingExecutor grpcInternalExecutor;
+	final LoggingExecutor grpcInternalExecutor;
 
 
 
@@ -458,9 +458,9 @@ public class FakeResponseObserver<ResponseT>
 
 
 	/**
-	 * Tracks task rejections, occurring mainly on attempts to execute after the shutdown.
+	 * Logs task scheduling and executions and scheduling rejections.
 	 */
-	public static class FailureTrackingExecutor extends ThreadPoolExecutor {
+	public static class LoggingExecutor extends ThreadPoolExecutor {
 
 		/**
 		 * List of all rejected tasks.
@@ -473,11 +473,11 @@ public class FakeResponseObserver<ResponseT>
 
 
 
-		public FailureTrackingExecutor(String name, int poolSize) {
+		public LoggingExecutor(String name, int poolSize) {
 			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
 			this.name = name;
 			setRejectedExecutionHandler((task, executor) -> {
-				log.log(Level.SEVERE, name + " rejected " + task.toString(), new Exception());
+				log.log(Level.SEVERE, name + " rejected " + task, new Exception());
 				rejectedTasks.add(task);
 			});
 		}
@@ -564,7 +564,7 @@ public class FakeResponseObserver<ResponseT>
 	/**
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
 	 * <code>FINER</code> will log every message sent to the observer and every task dispatched
-	 * to {@link FailureTrackingExecutor}.<br/>
+	 * to {@link LoggingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
 	static final Logger log = Logger.getLogger(FakeResponseObserver.class.getName());
