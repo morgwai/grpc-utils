@@ -1,7 +1,6 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -83,10 +82,8 @@ public class DispatchingOnReadyHandlerTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfResponses, responseObserver.getOutputData().size());
@@ -131,10 +128,8 @@ public class DispatchingOnReadyHandlerTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("correct number of messages should be written",
 				responsesPerTasks * numberOfTasks,
@@ -195,10 +190,8 @@ public class DispatchingOnReadyHandlerTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertNull("no exception should be thrown", caughtError);
 		assertEquals("correct number of messages should be written",
@@ -246,10 +239,8 @@ public class DispatchingOnReadyHandlerTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertSame("thrownException should be passed to exceptionHandler",
 				thrownException, caughtError);

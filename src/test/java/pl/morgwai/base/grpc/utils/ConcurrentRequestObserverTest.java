@@ -2,7 +2,6 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.Comparator;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -139,8 +138,7 @@ public class ConcurrentRequestObserverTest {
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -173,8 +171,7 @@ public class ConcurrentRequestObserverTest {
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests, responseObserver.getOutputData().size());
@@ -208,8 +205,7 @@ public class ConcurrentRequestObserverTest {
 				requestObserver, new RequestProducer(numberOfRequests));
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
 		verifyExecutor(grpcInternalExecutor);
@@ -249,8 +245,7 @@ public class ConcurrentRequestObserverTest {
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		verifyExecutor(grpcInternalExecutor);
@@ -290,8 +285,7 @@ public class ConcurrentRequestObserverTest {
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		verifyExecutor(grpcInternalExecutor);
@@ -331,8 +325,7 @@ public class ConcurrentRequestObserverTest {
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
 		verifyExecutor(grpcInternalExecutor);
@@ -409,10 +402,8 @@ public class ConcurrentRequestObserverTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
@@ -473,10 +464,8 @@ public class ConcurrentRequestObserverTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("handler of the active observer should be called", 2, handlerCallCounters[1]);
 		assertEquals("handler of and finalized observer should not be called",
@@ -558,10 +547,8 @@ public class ConcurrentRequestObserverTest {
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(
-				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
-		userExecutor.awaitTermination(
-				getRemainingMillis(startMillis, timoutMillis), TimeUnit.MILLISECONDS);
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * tasksPerRequest * responsesPerTask,

@@ -523,6 +523,12 @@ public class FakeResponseObserver<ResponseT>
 			log.severe(name + " shutting down forcibly");
 			return super.shutdownNow();
 		}
+
+
+
+		public boolean awaitTermination(long timeoutMillis) throws InterruptedException {
+			return super.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
+		}
 	}
 
 
