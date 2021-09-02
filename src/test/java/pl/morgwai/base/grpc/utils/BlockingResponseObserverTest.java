@@ -21,46 +21,39 @@ public class BlockingResponseObserverTest {
 
 	BlockingResponseObserver<ResponseMessage> responseObserver;
 	List<ResponseMessage> receivedData;
-	Throwable caughtThrowable;
-	Thread responseConsumer;
 
 
 
 	@Before
 	public void setup() {
 		receivedData = new LinkedList<>();
-		caughtThrowable = null;
 		responseObserver = new BlockingResponseObserver<>((msg) -> {
 			if (log.isLoggable(Level.FINER)) log.finer("received " + msg);
 			receivedData.add(msg);
-		});
-		responseConsumer = new Thread(() -> {
-			try {
-				responseObserver.awaitCompletion();
-			} catch (ErrorReportedException e) {
-				caughtThrowable = e.getCause();
-			} catch (Exception e) {
-				caughtThrowable = e;
-			}
 		});
 	}
 
 
 
 	@Test
-	public void testPositiveCase() throws InterruptedException {
-		responseConsumer.start();
-		ResponseMessage[] inputData = new ResponseMessage[10];
-		for (int i = 0; i < inputData.length; i++) {
-			inputData[i] = new ResponseMessage(i);
-			responseObserver.onNext(inputData[i]);
-		}
-		responseObserver.onCompleted();
-		responseConsumer.join(10_000l);
+	public void testPositiveCase() throws InterruptedException, ErrorReportedException {
+		final ResponseMessage[] inputData = new ResponseMessage[10];
+		final var worker = new Thread(() -> {
+			try {
+				Thread.sleep(10l);
+			} catch (InterruptedException e) {}
+			for (int i = 0; i < inputData.length; i++) {
+				inputData[i] = new ResponseMessage(i);
+				responseObserver.onNext(inputData[i]);
+			}
+			responseObserver.onCompleted();
+		});
 
-		assertFalse("awaitCompletion() should exit", responseConsumer.isAlive());
+		worker.start();
+		responseObserver.awaitCompletion(50l);
+		worker.join(10l);
+
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
-		assertNull("no exception should occur", caughtThrowable);
 		assertEquals("all input messages should be received",
 				inputData.length, receivedData.size());
 		for (int i = 0; i < inputData.length; i++) {
@@ -72,50 +65,58 @@ public class BlockingResponseObserverTest {
 
 
 	@Test
-	public void testInterrupt() throws InterruptedException {
-		responseConsumer.start();
-		responseConsumer.interrupt();
-		responseConsumer.join(10_000l);
-
-		assertFalse("awaitCompletion() should exit", responseConsumer.isAlive());
-		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
-		assertTrue("InterruptedException should be caught",
-				caughtThrowable instanceof InterruptedException);
-	}
-
-
-
-	@Test
 	public void testOnError() throws InterruptedException {
-		responseConsumer.start();
-		Exception reportedError = new Exception();
-		responseObserver.onError(reportedError);
-		responseConsumer.join(10_000l);
+		final Exception reportedError = new Exception();
+		final var worker = new Thread(() -> {
+			try {
+				Thread.sleep(10l);
+			} catch (InterruptedException e) {}
+			responseObserver.onError(reportedError);
+		});
 
-		assertFalse("awaitCompletion() should exit", responseConsumer.isAlive());
+		worker.start();
+		try {
+			responseObserver.awaitCompletion(50l);
+			fail("ErrorReportedException should be thrown");
+		} catch (ErrorReportedException | InterruptedException e) {
+			assertSame("reported error should be caught", reportedError, e.getCause());
+		}
+		worker.join(10l);
+
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
-		assertSame("reported error should be caught", reportedError, caughtThrowable);
 	}
 
 
 
 	@Test
-	public void testTimeout() throws InterruptedException {
-		responseConsumer = new Thread(() -> {
+	public void testTimeout() throws InterruptedException, ErrorReportedException {
+		final var worker = new Thread(() -> {
 			try {
-				responseObserver.awaitCompletion(1l);
-			} catch (ErrorReportedException e) {
-				caughtThrowable = e.getCause();
-			} catch (Exception e) {
-				caughtThrowable = e;
+				Thread.sleep(20l);
+			} catch (InterruptedException e) {}
+			synchronized (responseObserver) {
+				responseObserver.notifyAll();
 			}
 		});
-		responseConsumer.start();
-		responseConsumer.join(10_000l);
 
-		assertFalse("awaitCompletion() should exit", responseConsumer.isAlive());
+		worker.start();
+		final var startMillis = System.currentTimeMillis();
+		responseObserver.awaitCompletion(50l);
+
+		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50l);
 		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
-		assertNull("no exception should occur", caughtThrowable);
+		worker.join(10l);
+	}
+
+
+
+	@Test
+	public void completedBeforeAwait() throws InterruptedException, ErrorReportedException {
+		responseObserver.onCompleted();;
+
+		responseObserver.awaitCompletion(1l);
+
+		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 	}
 
 
@@ -124,14 +125,9 @@ public class BlockingResponseObserverTest {
 
 		int id;
 
-		public ResponseMessage(int id) {
-			this.id = id;
-		}
+		public ResponseMessage(int id) { this.id = id; }
 
-		@Override
-		public String toString() {
-			return "msg-" + id;
-		}
+		@Override public String toString() { return "msg-" + id; }
 	}
 
 
