@@ -43,36 +43,43 @@ import io.grpc.stub.StreamObservers;
  * Once response observers for all request messages are closed and the client closes his request
  * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.</p>
  */
-public class ConcurrentRequestObserver<RequestT, ResponseT>
-		implements StreamObserver<RequestT> {
+public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObserver<RequestT> {
 
 
 
 	/**
 	 * Produces response messages to the given <code>requestMessage</code> and submits them to the
 	 * {@code singleRequestMessageResponseObserver} (associated with this {@code requestMessage}).
-	 * Implementations of this method may freely dispatch work to several other threads and
-	 * {@code singleRequestMessageResponseObserver} is thread-safe.<br/>
 	 * Once all response messages to the given <code>requestMessage</code> are submitted,
-	 * <code>singleRequestMessageResponseObserver.onComplete()</code> must be called.
+	 * {@link CallStreamObserver#onCompleted() singleRequestMessageResponseObserver.onComplete()}
+	 * must be called.
 	 * <p>
-	 * Implementations that produce several response messages should respect
-	 * {@code singleRequestMessageResponseObserver}'s readiness with
-	 * {@code singleRequestMessageResponseObserver.isReady()} and
-	 * {@code singleRequestMessageResponseObserver.setOnReadyHandler(...)} methods to avoid
-	 * excessive buffering: consider using {@link DispatchingOnReadyHandler} or
+	 * {@code singleRequestMessageResponseObserver} is thread-safe and implementations of this
+	 * method may freely dispatch work to several other threads.</p>
+	 * <p>
+	 * To avoid excessive buffering, implementations that produce several response messages for a
+	 * single request message should respect {@code singleRequestMessageResponseObserver}'s
+	 * readiness with
+	 * {@link CallStreamObserver#isReady() singleRequestMessageResponseObserver.isReady()} and
+	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
+	 * singleRequestMessageResponseObserver.setOnReadyHandler(...)} methods. Consider using
+	 * {@link DispatchingOnReadyHandler} or
 	 * {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}.</p>
 	 * <p>
-	 * {@code singleRequestMessageResponseObserver.disableAutoInboundFlowControl()},
-	 * {@code singleRequestMessageResponseObserver.request(...)} have no effect: request messages
-	 * are requested automatically by the parent {@code ConcurrentRequestObserver}.</p>
-	 * <p>
-	 * {@code singleRequestMessageResponseObserver.onError(...)} will call
-	 * {@link #onError(Throwable)} from the parent response observer (supplied via
+	 * {@link CallStreamObserver#onError(Throwable)
+	 * singleRequestMessageResponseObserver.onError(...)} will call {@link #onError(Throwable)} from
+	 * the parent response observer (supplied via
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int) constructor} param).</p>
 	 * <p>
-	 * {@code singleRequestMessageResponseObserver.setMessageCompression()} has no effect:
-	 * compression should be set using the parent response observer.</p>
+	 * {@link CallStreamObserver#disableAutoInboundFlowControl()
+	 * singleRequestMessageResponseObserver.disableAutoInboundFlowControl()},
+	 * {@link CallStreamObserver#request(int) singleRequestMessageResponseObserver.request(...)}
+	 * have no effect: request messages are requested automatically by the parent
+	 * {@code ConcurrentRequestObserver}.</p>
+	 * <p>
+	 * {@link CallStreamObserver#setMessageCompression(boolean)
+	 * singleRequestMessageResponseObserver.setMessageCompression()} has no effect: compression
+	 * should be set using the parent response observer.</p>
 	 * <p>
 	 * Default implementation of this method calls {@link #requestHandler} supplied via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
