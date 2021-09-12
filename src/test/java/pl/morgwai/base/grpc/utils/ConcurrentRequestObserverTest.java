@@ -185,7 +185,7 @@ public class ConcurrentRequestObserverTest {
 
 
 	@Test
-	public void testOnError() throws InterruptedException {
+	public void testOnErrorSingleThread() throws InterruptedException {
 		final var numberOfRequests = 2;
 		final var error = new Exception();
 		final var requestObserver = newConcurrentRequestObserver(
@@ -208,7 +208,61 @@ public class ConcurrentRequestObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
+		assertEquals("onError() should be called 1 time", 1, responseObserver.getFinalizedCount());
 		verifyExecutor(grpcInternalExecutor);
+	}
+
+
+
+	@Test
+	public void testOnErrorMultipleThreads() throws InterruptedException {
+		final var numberOfConcurrentRequests = 4;
+		final var numberOfSeriesToPass = 10;
+		final var numberOfRequests = (numberOfSeriesToPass + 2) * numberOfConcurrentRequests;
+		final var error = new Exception();
+		final var userExecutor = new LoggingExecutor("userExecutor", numberOfConcurrentRequests);
+		final var requestObserver = newConcurrentRequestObserver(
+			numberOfConcurrentRequests,
+			(requestMessage, individualObserver) -> userExecutor.execute(() -> {
+				final var requestId = requestMessage.id;
+				if (requestId <= numberOfSeriesToPass * numberOfConcurrentRequests) {
+					try {
+						Thread.sleep(3l);  // processing delay
+					} catch (InterruptedException e) {}
+					individualObserver.onNext(new ResponseMessage(requestId));
+					individualObserver.onCompleted();
+					return;
+				} else if (requestId > (numberOfSeriesToPass + 1) * numberOfConcurrentRequests) {
+					responseObserver.onError(
+							new Exception("no messages should be requested after an error"));
+				} else {
+					try {
+						individualObserver.onError(error);
+					} catch (IllegalStateException e) {}  // subsequent calls will throw
+				}
+			}),
+			newErrorHandler(Thread.currentThread())
+		);
+
+		final var startMillis = System.currentTimeMillis();
+		responseObserver.startRequestDelivery(
+				requestObserver, new RequestProducer(numberOfRequests));
+		while (responseObserver.getFinalizedCount() < numberOfConcurrentRequests) {
+			responseObserver.awaitFinalization(getRemainingMillis(startMillis));
+		}
+		grpcInternalExecutor.shutdown();
+		userExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+
+		assertEquals("correct number of messages should be written",
+				numberOfSeriesToPass * numberOfConcurrentRequests,
+				responseObserver.getOutputData().size());
+		assertSame("supplied error should be reported", error, responseObserver.getReportedError());
+		assertEquals("onError() should be called numberOfConcurrentRequests times",
+				numberOfConcurrentRequests, responseObserver.getFinalizedCount());
+		verifyExecutor(grpcInternalExecutor);
+		verifyExecutor(userExecutor);
 	}
 
 
@@ -357,8 +411,7 @@ public class ConcurrentRequestObserverTest {
 		final int numberOfConcurrentRequests,
 		final long timoutMillis
 	) throws InterruptedException {
-		final var userExecutor = new LoggingExecutor(
-				"userExecutor", numberOfConcurrentRequests);
+		final var userExecutor = new LoggingExecutor("userExecutor", numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
@@ -367,7 +420,7 @@ public class ConcurrentRequestObserverTest {
 				for (int i = 0; i < responsesPerRequest; i++) {
 					// produce each response in a separate task in about 1-3ms
 					final var responseNumber = Integer.valueOf(i);
-					final var task = new Runnable() {
+					userExecutor.execute(new Runnable() {
 
 						@Override public void run() {
 							// sleep time varies depending on request/response message counts
@@ -388,8 +441,7 @@ public class ConcurrentRequestObserverTest {
 							return "task: { requestId: " + requestMessage.id
 									+ ", responseNo: " + responseNumber + " }";
 						}
-					};
-					userExecutor.execute(task);
+					});
 				}
 			},
 			newErrorHandler(Thread.currentThread())
@@ -507,8 +559,7 @@ public class ConcurrentRequestObserverTest {
 		final long timoutMillis
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
-		final var userExecutor = new LoggingExecutor(
-				"userExecutor", executorThreads);
+		final var userExecutor = new LoggingExecutor("userExecutor", executorThreads);
 		final var requestObserver = newConcurrentRequestObserver(
 			numberOfConcurrentRequests,
 			(requestMessage, individualObserver) -> {

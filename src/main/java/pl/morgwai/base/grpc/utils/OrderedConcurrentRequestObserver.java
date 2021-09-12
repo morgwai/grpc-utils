@@ -51,24 +51,21 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 		super(responseObserver, numberOfConcurrentRequests);
 		buffer = new OrderedConcurrentOutputBuffer<>(new OutputStream<>() {
 
-			@Override
-			public void write(ResponseT message) {
+			@Override public void write(ResponseT message) {
+				// other bucket threads may be calling isReady(), onError() etc
 				synchronized (OrderedConcurrentRequestObserver.this) {
 					responseObserver.onNext(message);
 				}
 			}
 
-			/**
-			 * {@link ConcurrentRequestObserver} tracks individual requests and takes care of
-			 * calling {@code onCompleted()}.
-			 */
-			@Override
-			public void close() {}
+			@Override public void close() {
+				// {@link ConcurrentRequestObserver} tracks individual requests and takes care of
+				// calling {@code responseObserver.onCompleted()}.
+			}
 		});
 	}
 
 	final OrderedConcurrentOutputBuffer<ResponseT> buffer;
-	volatile boolean error = false;
 
 
 
@@ -93,9 +90,6 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 		@Override
 		public void onCompleted() {
-			if (error) {
-				throw new IllegalStateException(ERROR_REPORTED_MESSAGE);
-			}
 			bucket.close();
 			super.onCompleted();
 		}
@@ -104,22 +98,7 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 		@Override
 		public void onNext(ResponseT response) {
-			if (error) {
-				throw new IllegalStateException(ERROR_REPORTED_MESSAGE);
-			}
 			bucket.write(response);
 		}
-
-
-
-		@Override
-		public void onError(Throwable t) {
-			error = true;
-			super.onError(t);
-		}
 	}
-
-
-
-	static final String ERROR_REPORTED_MESSAGE = "onError() has been called";
 }

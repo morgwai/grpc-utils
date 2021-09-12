@@ -32,6 +32,15 @@ public class OrderedConcurrentRequestObserverTest extends ConcurrentRequestObser
 
 
 	@Override
+	public void testOnErrorMultipleThreads() throws InterruptedException {
+		super.testOnErrorMultipleThreads();
+		assertTrue("messages should be written in order",
+				Comparators.isInOrder(responseObserver.getOutputData(), responseComparator));
+	}
+
+
+
+	@Override
 	public void testAsyncProcessingOf100RequestsIn5Threads() throws InterruptedException {
 		super.testAsyncProcessingOf100RequestsIn5Threads();
 		assertTrue("messages should be written in order",

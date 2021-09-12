@@ -217,14 +217,18 @@ public class FakeResponseObserver<ResponseT>
 	 * Count of calls to {@link #onCompleted()} and {@link #onError(Throwable)}.
 	 * Should be 1 at the end of positive test methods.
 	 */
-	public int getFinalizedCount() { return finalizedCount; }
+	public int getFinalizedCount() {
+		synchronized (finalizationGuard) {
+			return finalizedCount;
+		}
+	}
 	int finalizedCount = 0;
 
 	/**
-	 * Should an AssertionError be thrown immediately upon second finalization.
-	 * By default <code>false</code>.
+	 * Should an IllegalStateException be thrown immediately upon second finalization.
+	 * By default <code>true</code>.
 	 */
-	public boolean failOnMultipleFinalizations = false;
+	public boolean failOnMultipleFinalizations = true;
 
 	final Object finalizationGuard = new Object();
 
@@ -240,7 +244,7 @@ public class FakeResponseObserver<ResponseT>
 			synchronized (finalizationGuard) {
 				finalizedCount++;
 				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new AssertionError("multipe finalizations");
+					throw new IllegalStateException("multipe finalizations");
 				}
 				finalizationGuard.notify();
 			}
@@ -259,11 +263,11 @@ public class FakeResponseObserver<ResponseT>
 		try {
 			if (log.isLoggable(Level.FINE)) log.fine("error reported: " + t);
 			synchronized (finalizationGuard) {
-				reportedError = t;
 				finalizedCount++;
 				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new AssertionError("multipe finalizations");
+					throw new IllegalStateException("multipe finalizations");
 				}
+				reportedError = t;
 				finalizationGuard.notify();
 			}
 		} finally {
