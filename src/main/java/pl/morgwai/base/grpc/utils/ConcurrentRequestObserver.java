@@ -70,14 +70,14 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 *
 	 * @see SingleRequestMessageResponseObserver
 	 */
-	protected void onRequest(
+	protected void onRequestMessage(
 			RequestT requestMessage,
 			CallStreamObserver<ResponseT> singleRequestMessageResponseObserver) {
 		requestHandler.accept(requestMessage, singleRequestMessageResponseObserver);
 	}
 
 	/**
-	 * Called by {@link #onRequest(Object, CallStreamObserver)}. Supplied via the param of
+	 * Called by {@link #onRequestMessage(Object, CallStreamObserver)}. Supplied via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
 	 * constructor.
 	 */
@@ -109,7 +109,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 *
 	 * @param responseObserver response observer of the given gRPC method.
 	 * @param requestHandler stored on {@link #requestHandler} to be called by
-	 *     {@link #onRequest(Object, CallStreamObserver)}.
+	 *     {@link #onRequestMessage(Object, CallStreamObserver)}.
 	 * @param errorHandler stored on {@link #errorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
 	 */
@@ -128,8 +128,9 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 	/**
 	 * Configures flow control.
-	 * Constructor for those who prefer to override {@link #onRequest(Object, CallStreamObserver)}
-	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
+	 * Constructor for those who prefer to override
+	 * {@link #onRequestMessage(Object, CallStreamObserver)} and {@link #onError(Throwable)} in a
+	 * subclass instead of providing lambdas.
 	 */
 	protected ConcurrentRequestObserver(
 			ServerCallStreamObserver<ResponseT> responseObserver,
@@ -185,13 +186,13 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 
 	/**
-	 * Calls {@link #onRequest(Object, CallStreamObserver) onRequest}({@code request},
+	 * Calls {@link #onRequestMessage(Object, CallStreamObserver) onRequest}({@code request},
 	 * {@link #newSingleRequestMessageResponseObserver()}).
 	 */
 	@Override
 	public final void onNext(RequestT request) {
 		final var individualObserver = newSingleRequestMessageResponseObserver();
-		onRequest(request, individualObserver);
+		onRequestMessage(request, individualObserver);
 		synchronized (this) {
 			 if ( ! responseObserver.isReady()) return;
 		}
@@ -218,7 +219,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 * Observer of responses to 1 particular request message. All methods are thread-safe.
 	 * <p>
 	 * To avoid excessive buffering, implementations of
-	 * {@link ConcurrentRequestObserver#onRequest(Object, CallStreamObserver)} should respect
+	 * {@link ConcurrentRequestObserver#onRequestMessage(Object, CallStreamObserver)} should respect
 	 * {@code singleRequestMessageResponseObserver}'s readiness with {@link #isReady()} and
 	 * {@link #setOnReadyHandler(Runnable)} methods.<br/>
 	 * Consider using {@link DispatchingOnReadyHandler} or
