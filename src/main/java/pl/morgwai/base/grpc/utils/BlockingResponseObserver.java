@@ -31,15 +31,24 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 
+	/**
+	 * Calls {@link #responseHandler}.
+	 */
 	@Override
 	public void onNext(T response) {
 		responseHandler.accept(response);
 	}
 
+	/**
+	 * Initializes {@link #responseHandler}.
+	 */
 	public BlockingResponseObserver(Consumer<T> responseHandler) {
 		this.responseHandler = responseHandler;
 	}
 
+	/**
+	 * Called by {@link #onNext(Object)}.
+	 */
 	protected Consumer<T> responseHandler;
 
 
@@ -75,8 +84,12 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 		return completed;
 	}
 
-	boolean completed = false;
+	/**
+	 * Returns {@code true} if either {@link #onCompleted()} or {@link #onError(Throwable)} was
+	 * called.
+	 */
 	public boolean isCompleted() { return completed; }
+	boolean completed = false;
 
 	/**
 	 * Awaits for {@link #onCompleted()} or {@link #onError(Throwable)} to be called.
@@ -89,6 +102,9 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 
+	/**
+	 * Notifies the thread that called {@link #awaitCompletion(long)}.
+	 */
 	@Override
 	public synchronized void onCompleted() {
 		completed = true;
@@ -97,17 +113,27 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 
+	/**
+	 * Causes {@link #awaitCompletion(long)} to throw a {@link ErrorReportedException}.
+	 */
 	@Override
 	public void onError(Throwable error) {
 		this.error = error;
 		onCompleted();
 	}
 
-	Throwable error;
+	/**
+	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
+	 */
 	public Throwable getError() { return error; }
+	Throwable error;
 
 
 
+	/**
+	 * Thrown by {@link BlockingResponseObserver#awaitCompletion(long)}. {@code getCause()} will
+	 * return exception reported via {@link BlockingResponseObserver#onError(Throwable)}.
+	 */
 	public static class ErrorReportedException extends Exception {
 		ErrorReportedException(Throwable reportedError) { super(reportedError); }
 		private static final long serialVersionUID = 4822900070324973236L;

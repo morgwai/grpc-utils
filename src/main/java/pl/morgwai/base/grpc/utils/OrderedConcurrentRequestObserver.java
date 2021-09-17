@@ -28,6 +28,10 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 
 
+	/**
+	 * See {@link ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int,
+	 * BiConsumer, Consumer) super}.
+	 */
 	public OrderedConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
 		int numberOfConcurrentRequests,
@@ -42,8 +46,8 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Constructor for those who prefer to override {@link #onRequest(Object, CallStreamObserver)}
-	 * and {@link #onError(Throwable)} in a subclass instead of providing lambdas.
+	 * See {@link
+	 * ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int) super}.
 	 */
 	protected OrderedConcurrentRequestObserver(
 			ServerCallStreamObserver<ResponseT> responseObserver,
@@ -69,6 +73,10 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 
 
+	/**
+	 * Constructs a new {@link SingleRequestMessageResponseObserver} that instead of writing
+	 * messages directly to the parent response observer, buffers them in its associated bucket.
+	 */
 	@Override
 	protected SingleRequestMessageResponseObserver newSingleRequestMessageResponseObserver() {
 		return new BucketResponseObserver(buffer.addBucket());

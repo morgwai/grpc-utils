@@ -22,11 +22,11 @@ import io.grpc.stub.StreamObserver;
 /**
  * A fake {@link ServerCallStreamObserver} testing helper class.
  * Helps to emulate behavior of a client and the gRPC system in server-side infrastructure code
- * tests.<br/>
- * <br/>
+ * tests.
+ * <p>
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
- * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.<br/>
- * <br/>
+ * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
+ * <p>
  * Usage:<ol>
  *   <li>Configure observer's readiness by adjusting {@link #outputBufferSize} and
  *     {@link #unreadyDurationMillis} variables.</li>
@@ -39,7 +39,7 @@ import io.grpc.stub.StreamObserver;
  *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
  *     {@link #getReportedError()} methods and by shutting down and inspecting
  *     {@link LoggingExecutor} supplied to the constructor.</li>
- * </ol>
+ * </ol></p>
  */
 public class FakeResponseObserver<ResponseT>
 		extends ServerCallStreamObserver<ResponseT> {

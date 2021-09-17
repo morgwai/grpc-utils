@@ -248,40 +248,68 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
+	/**
+	 * Indicates if the task {@code i} is completed.
+	 * Default implementation calls {@link #completionIndicator}.
+	 */
 	protected boolean isCompleted(int i) throws Exception {
 		return completionIndicator.apply(i);
 	}
 
+	/**
+	 * Called by {@link #isCompleted(int)}.
+	 */
 	protected ThrowingFunction<Integer, Boolean> completionIndicator;
 
 
 
+	/**
+	 * Asks task {@code i} to produce a next message.
+	 * Default implementation calls {@link #messageProducer}.
+	 */
 	protected ResponseT produceMessage(int i) throws Exception {
 		return messageProducer.apply(i);
 	}
 
+	/**
+	 * Called by {@link #produceMessage(int)}.
+	 */
 	protected ThrowingFunction<Integer, ResponseT> messageProducer;
 
 
 
+	/**
+	 * Handles exception thrown by task {@code i}.
+	 * Default implementation calls {@link #exceptionHandler}.
+	 */
 	protected Throwable handleException(int i, Throwable error) {
 		return exceptionHandler.apply(i, error);
 	}
 
+	/**
+	 * Called by {@link #handleException(int, Throwable)}.
+	 */
 	protected BiFunction<Integer, Throwable, Throwable> exceptionHandler;
 
 
 
+	/**
+	 * Cleans up after task {@code i} is completed.
+	 * Default implementation calls {@link #cleanupHandler}.
+	 */
 	protected void cleanup(int i) {
 		if (cleanupHandler != null) cleanupHandler.accept(i);
 	}
 
+	/**
+	 * Called by {@link #cleanup(int)}.
+	 */
 	protected Consumer<Integer> cleanupHandler;
 
 
 
 	/**
-	 * For debugging and logging.
+	 * Sets handler to obtain String representation of task {@code i} for logging purposes.
 	 */
 	public void setTaskToStringHandler(Function<Integer, String> taskToStringHandler) {
 		this.taskToStringHandler = taskToStringHandler;
