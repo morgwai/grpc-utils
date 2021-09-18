@@ -19,7 +19,7 @@ A request `StreamObserver` for bi-di streaming methods that dispatch work to mul
 
 ### [OrderedConcurrentRequestObserver](src/main/java/pl/morgwai/base/grpc/utils/OrderedConcurrentRequestObserver.java)
 
-A `ConcurrentRequestObserver` that uses [OrderedConcurrentOutputBuffer](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/utils/OrderedConcurrentOutputBuffer.java) to automatically ensure that response messages are sent in order corresponding to request messages order.
+A `ConcurrentRequestObserver` that uses [OrderedConcurrentOutputBuffer](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/concurrent/OrderedConcurrentOutputBuffer.java) to automatically ensure that response messages are sent in order corresponding to request messages order.
 
 
 ### [BlockingResponseObserver](src/main/java/pl/morgwai/base/grpc/utils/BlockingResponseObserver.java)
