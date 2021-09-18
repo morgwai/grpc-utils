@@ -8,8 +8,8 @@ import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
-import pl.morgwai.base.utils.OrderedConcurrentOutputBuffer;
-import pl.morgwai.base.utils.OrderedConcurrentOutputBuffer.OutputStream;
+import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer;
+import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
 
 
 
