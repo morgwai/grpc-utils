@@ -149,13 +149,13 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	int joblessThreadCount = 0;
 	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
-	protected Object globalLock = new Object();
+	protected Object lock = new Object();
 
 
 
 	void onResponseObserverReady() {
 		List<SingleRequestMessageResponseObserver> ongoingRequestsCopy;
-		synchronized (globalLock) {
+		synchronized (lock) {
 			// request 1 message for every thread that refrained from doing so when the buffer
 			// was too full
 			if (joblessThreadCount > 0 && ! halfClosed) {
@@ -169,11 +169,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 			ongoingRequestsCopy = new ArrayList<>(ongoingRequests);
 		}
 		for (var individualObserver: ongoingRequestsCopy) {
-			synchronized (individualObserver.onReadyHandlerLock) {
-				if (individualObserver.onReadyHandler != null) {
-					individualObserver.onReadyHandler.run();
-				}
-			}
+			if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 		}
 	}
 
@@ -181,7 +177,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 	@Override
 	public final void onCompleted() {
-		synchronized (globalLock) {
+		synchronized (lock) {
 			halfClosed = true;
 			if (ongoingRequests.isEmpty()) responseObserver.onCompleted();
 		}
@@ -197,14 +193,10 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	public final void onNext(RequestT request) {
 		final var individualObserver = newSingleRequestMessageResponseObserver();
 		onRequestMessage(request, individualObserver);
-		synchronized (globalLock) {
+		synchronized (lock) {
 			 if ( ! responseObserver.isReady()) return;
 		}
-		synchronized (individualObserver.onReadyHandlerLock) {
-			if (individualObserver.onReadyHandler != null) {
-				individualObserver.onReadyHandler.run();
-			}
-		}
+		if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 	}
 
 	/**
@@ -231,13 +223,12 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 */
 	protected class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
-		Runnable onReadyHandler;
-		Object onReadyHandlerLock = new Object();
+		volatile Runnable onReadyHandler;
 
 
 
 		SingleRequestMessageResponseObserver() {
-			synchronized (globalLock) {
+			synchronized (lock) {
 				ongoingRequests.add(this);
 			}
 		}
@@ -253,7 +244,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		 */
 		@Override
 		public void onCompleted() {
-			synchronized (globalLock) {
+			synchronized (lock) {
 				if ( ! ongoingRequests.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -274,7 +265,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public void onNext(ResponseT response) {
-			synchronized (globalLock) {
+			synchronized (lock) {
 				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -291,7 +282,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		 */
 		@Override
 		public void onError(Throwable t) {
-			synchronized (globalLock) {
+			synchronized (lock) {
 				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -303,7 +294,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public boolean isReady() {
-			synchronized (globalLock) {
+			synchronized (lock) {
 				return responseObserver.isReady();
 			}
 		}
@@ -312,9 +303,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public void setOnReadyHandler(Runnable onReadyHandler) {
-			synchronized (onReadyHandlerLock) {
-				this.onReadyHandler = onReadyHandler;
-			}
+			this.onReadyHandler = onReadyHandler;
 		}
 
 

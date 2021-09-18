@@ -57,7 +57,7 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 
 			@Override public void write(ResponseT message) {
 				// other bucket threads may be calling isReady(), onError() etc
-				synchronized (globalLock) {
+				synchronized (lock) {
 					responseObserver.onNext(message);
 				}
 			}
