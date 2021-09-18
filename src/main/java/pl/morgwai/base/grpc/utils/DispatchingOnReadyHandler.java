@@ -56,11 +56,8 @@ import io.grpc.stub.StreamObserver;
  *        (i) -&gt; state.produceNextResponseMessage(i),
  *        (i, error) -&gt; {
  *            state.fail(error);  // interrupt other tasks
- *            if ( ! (error instanceof StatusRuntimeException)) {
- *                synchronized (handler) {
- *                    responseObserver.onError(error);
- *                }
- *            }
+ *            if (error instanceof StatusRuntimeException) return null;
+ *            return Status.INTERNAL.asException();
  *        },
  *        (i) -&gt; state.cleanup(i)
  *    );
@@ -156,7 +153,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		this.messageProducer = messageProducer::apply;
 		this.exceptionHandler = (i, e) -> {
 			if ( ! (e instanceof StatusRuntimeException)) {
-				synchronized (this) {
+				synchronized (lock) {
 					streamObserver.onError(e);
 				}
 			}
@@ -242,6 +239,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	Executor taskExecutor;
 	int numberOfTasks;
 	boolean[] taskRunning;
+	Object lock = new Object();
 
 	AtomicInteger completionCount = new AtomicInteger(0);
 	boolean errorReported = false;
@@ -321,25 +319,27 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	/**
 	 * Dispatches tasks to handle a single cycle of observer's readiness.
 	 */
-	public synchronized void run() {
-		if (errorReported) return;
-		for (int i = 0; i < numberOfTasks; i++) {
-			// it may happen that responseObserver will change its state from unready to ready very
-			// fast, before some tasks can even notice. Such tasks will span over more than 1 cycle
-			// and taskRunning flags prevent dispatching redundant tasks in in such case.
-			if (taskRunning[i]) continue;
-			taskRunning[i] = true;
-			final var taskNumber = Integer.valueOf(i);
-			taskExecutor.execute(new Runnable() {
+	public void run() {
+		synchronized (lock) {
+			if (errorReported) return;
+			for (int i = 0; i < numberOfTasks; i++) {
+				// it may happen that responseObserver will change its state from unready to ready
+				// very fast, before some tasks can even notice. Such tasks will span over more than
+				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
+				if (taskRunning[i]) continue;
+				taskRunning[i] = true;
+				final var taskNumber = Integer.valueOf(i);
+				taskExecutor.execute(new Runnable() {
 
-				@Override public void run() { handleSingleReadinessCycle(taskNumber); }
+					@Override public void run() { handleSingleReadinessCycle(taskNumber); }
 
-				@Override public String toString() {
-					return taskToStringHandler != null
-							? taskToStringHandler.apply(taskNumber)
-							: "dispatchedOnReadyHandler-task-" + taskNumber;
-				}
-			});
+					@Override public String toString() {
+						return taskToStringHandler != null
+								? taskToStringHandler.apply(taskNumber)
+								: "dispatchedOnReadyHandler-task-" + taskNumber;
+					}
+				});
+			}
 		}
 	}
 
@@ -349,7 +349,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		var ready = true;
 		try {
 			if ( ! isCompleted(taskNumber)) {
-				synchronized (this) {
+				synchronized (lock) {
 					ready = streamObserver.isReady();
 					if ( ! ready) {
 						taskRunning[taskNumber] = false;
@@ -359,7 +359,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				do {
 					final var responseMessage = produceMessage(taskNumber);
 					var completed = isCompleted(taskNumber);
-					synchronized (this) {
+					synchronized (lock) {
 						streamObserver.onNext(responseMessage);
 						if (completed) break;  // don't check isReady, call onCompleted immediately
 						ready = streamObserver.isReady();
@@ -371,13 +371,15 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				} while (true);  // completed/unready cause break/return: no need for extra check
 			}
 			if (completionCount.incrementAndGet() == numberOfTasks) {
-				streamObserver.onCompleted();
+				synchronized (lock) {
+					streamObserver.onCompleted();
+				}
 			}
 			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
 		} catch (Throwable throwable) {
 			var toReport = handleException(taskNumber, throwable);
 			if (toReport != null) {
-				synchronized (this) {
+				synchronized (lock) {
 					if ( ! errorReported) {
 						streamObserver.onError(toReport);
 						errorReported = true;

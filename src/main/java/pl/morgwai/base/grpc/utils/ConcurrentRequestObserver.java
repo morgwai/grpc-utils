@@ -141,19 +141,21 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
 	}
 
+
+
 	ServerCallStreamObserver<ResponseT> responseObserver;
-
-
 
 	boolean halfClosed = false;
 	int joblessThreadCount = 0;
 	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
+	protected Object globalLock = new Object();
+
 
 
 	void onResponseObserverReady() {
 		List<SingleRequestMessageResponseObserver> ongoingRequestsCopy;
-		synchronized (this) {
+		synchronized (globalLock) {
 			// request 1 message for every thread that refrained from doing so when the buffer
 			// was too full
 			if (joblessThreadCount > 0 && ! halfClosed) {
@@ -167,7 +169,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 			ongoingRequestsCopy = new ArrayList<>(ongoingRequests);
 		}
 		for (var individualObserver: ongoingRequestsCopy) {
-			synchronized (individualObserver) {
+			synchronized (individualObserver.onReadyHandlerLock) {
 				if (individualObserver.onReadyHandler != null) {
 					individualObserver.onReadyHandler.run();
 				}
@@ -178,9 +180,11 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 
 	@Override
-	public final synchronized void onCompleted() {
-		halfClosed = true;
-		if (ongoingRequests.isEmpty()) responseObserver.onCompleted();
+	public final void onCompleted() {
+		synchronized (globalLock) {
+			halfClosed = true;
+			if (ongoingRequests.isEmpty()) responseObserver.onCompleted();
+		}
 	}
 
 
@@ -193,10 +197,10 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	public final void onNext(RequestT request) {
 		final var individualObserver = newSingleRequestMessageResponseObserver();
 		onRequestMessage(request, individualObserver);
-		synchronized (this) {
+		synchronized (globalLock) {
 			 if ( ! responseObserver.isReady()) return;
 		}
-		synchronized (individualObserver) {
+		synchronized (individualObserver.onReadyHandlerLock) {
 			if (individualObserver.onReadyHandler != null) {
 				individualObserver.onReadyHandler.run();
 			}
@@ -228,11 +232,12 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	protected class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
 		Runnable onReadyHandler;
+		Object onReadyHandlerLock = new Object();
 
 
 
 		SingleRequestMessageResponseObserver() {
-			synchronized (ConcurrentRequestObserver.this) {
+			synchronized (globalLock) {
 				ongoingRequests.add(this);
 			}
 		}
@@ -248,7 +253,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		 */
 		@Override
 		public void onCompleted() {
-			synchronized (ConcurrentRequestObserver.this) {
+			synchronized (globalLock) {
 				if ( ! ongoingRequests.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -269,7 +274,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public void onNext(ResponseT response) {
-			synchronized (ConcurrentRequestObserver.this) {
+			synchronized (globalLock) {
 				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -286,7 +291,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		 */
 		@Override
 		public void onError(Throwable t) {
-			synchronized (ConcurrentRequestObserver.this) {
+			synchronized (globalLock) {
 				if ( ! ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
@@ -298,7 +303,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public boolean isReady() {
-			synchronized (ConcurrentRequestObserver.this) {
+			synchronized (globalLock) {
 				return responseObserver.isReady();
 			}
 		}
@@ -307,7 +312,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 		@Override
 		public void setOnReadyHandler(Runnable onReadyHandler) {
-			synchronized (this) {
+			synchronized (onReadyHandlerLock) {
 				this.onReadyHandler = onReadyHandler;
 			}
 		}

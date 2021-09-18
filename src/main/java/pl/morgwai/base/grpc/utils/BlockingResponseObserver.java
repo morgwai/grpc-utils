@@ -32,12 +32,9 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 	/**
-	 * Calls {@link #responseHandler}.
+	 * Called by {@link #onNext(Object)}.
 	 */
-	@Override
-	public void onNext(T response) {
-		responseHandler.accept(response);
-	}
+	protected Consumer<T> responseHandler;
 
 	/**
 	 * Initializes {@link #responseHandler}.
@@ -47,11 +44,12 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	}
 
 	/**
-	 * Called by {@link #onNext(Object)}.
+	 * Calls {@link #responseHandler}.
 	 */
-	protected Consumer<T> responseHandler;
-
-
+	@Override
+	public void onNext(T response) {
+		responseHandler.accept(response);
+	}
 
 	/**
 	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
@@ -62,29 +60,6 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 
 
 	/**
-	 * Awaits up to <code>timeoutMillis</code> for {@link #onCompleted()} or
-	 * {@link #onError(Throwable)} to be called.
-	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
-	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
-	 *     <code>getCause()</code> will return the throwable passed as argument.
-	 */
-	public synchronized boolean awaitCompletion(long timeoutMillis)
-			throws ErrorReportedException, InterruptedException {
-		if (timeoutMillis == 0l) {
-			while ( ! completed) wait();
-		} else {
-			final var startMillis = System.currentTimeMillis();
-			var currentMillis = startMillis;
-			while ( ! completed && currentMillis - startMillis < timeoutMillis) {
-				wait(timeoutMillis + startMillis - currentMillis);
-				currentMillis = System.currentTimeMillis();
-			}
-		}
-		if (error != null) throw new ErrorReportedException(error);
-		return completed;
-	}
-
-	/**
 	 * Returns {@code true} if either {@link #onCompleted()} or {@link #onError(Throwable)} was
 	 * called.
 	 */
@@ -92,9 +67,42 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	boolean completed = false;
 
 	/**
-	 * Awaits for {@link #onCompleted()} or {@link #onError(Throwable)} to be called.
+	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
+	 */
+	public Throwable getError() { return error; }
+	Throwable error;
+
+	Object lock = new Object();
+
+
+
+	/**
+	 * Awaits up to {@code timeoutMillis} for {@link #onCompleted()} or {@link #onError(Throwable)}
+	 * to be called. If {@code timeoutMillis} is {@code 0} then waits without a timeout.
+	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
 	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
 	 *     <code>getCause()</code> will return the throwable passed as argument.
+	 */
+	public boolean awaitCompletion(long timeoutMillis)
+			throws ErrorReportedException, InterruptedException {
+		synchronized (lock) {
+			if (timeoutMillis == 0l) {
+				while ( ! completed) lock.wait();
+			} else {
+				final var startMillis = System.currentTimeMillis();
+				var currentMillis = startMillis;
+				while ( ! completed && currentMillis - startMillis < timeoutMillis) {
+					lock.wait(timeoutMillis + startMillis - currentMillis);
+					currentMillis = System.currentTimeMillis();
+				}
+			}
+			if (error != null) throw new ErrorReportedException(error);
+			return completed;
+		}
+	}
+
+	/**
+	 * Calls {@link #awaitCompletion(long) awaitCompletion(0l)}.
 	 */
 	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
 		awaitCompletion(0l);
@@ -106,9 +114,11 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	 * Notifies the thread that called {@link #awaitCompletion(long)}.
 	 */
 	@Override
-	public synchronized void onCompleted() {
-		completed = true;
-		notifyAll();
+	public void onCompleted() {
+		synchronized (lock) {
+			completed = true;
+			lock.notifyAll();
+		}
 	}
 
 
@@ -121,12 +131,6 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 		this.error = error;
 		onCompleted();
 	}
-
-	/**
-	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
-	 */
-	public Throwable getError() { return error; }
-	Throwable error;
 
 
 
