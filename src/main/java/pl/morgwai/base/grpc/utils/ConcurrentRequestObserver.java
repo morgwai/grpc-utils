@@ -27,7 +27,7 @@ import io.grpc.stub.StreamObservers;
  *        StreamObserver&lt;ResponseMessage&gt; responseObserver) {
  *    return new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
  *        (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
- *        executor.getMaximumPoolSize(),
+ *        executor.getMaximumPoolSize() + 1,
  *        (requestMessage, singleRequestMessageResponseObserver) -&gt; {
  *            executor.execute(() -&gt; {
  *                var responseMessage = process(requestMessage);
@@ -107,19 +107,21 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 * Initializes {@link #requestHandler} and {@link #errorHandler} and calls
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int)}.
 	 *
-	 * @param responseObserver response observer of the given gRPC method.
 	 * @param requestHandler stored on {@link #requestHandler} to be called by
 	 *     {@link #onRequestMessage(Object, CallStreamObserver)}.
 	 * @param errorHandler stored on {@link #errorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
+	 *
+	 * @see #ConcurrentRequestObserver(ServerCallStreamObserver, int) The other constructor for
+	 *     the meaning of the remaining params.
 	 */
 	public ConcurrentRequestObserver(
 		ServerCallStreamObserver<ResponseT> responseObserver,
-		int numberOfConcurrentRequests,
+		int numberOfInitiallyRequestedMessages,
 		BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
-		this(responseObserver, numberOfConcurrentRequests);
+		this(responseObserver, numberOfInitiallyRequestedMessages);
 		this.requestHandler = requestHandler;
 		this.errorHandler = errorHandler;
 	}
@@ -131,13 +133,22 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 * Constructor for those who prefer to override
 	 * {@link #onRequestMessage(Object, CallStreamObserver)} and {@link #onError(Throwable)} in a
 	 * subclass instead of providing lambdas.
+	 *
+	 * @param responseObserver response observer of the given gRPC method.
+	 * @param numberOfInitiallyRequestedMessages the constructed observer will call
+	 *     {@code responseObserver.request(numberOfInitiallyRequestedMessages)}. If
+	 *     {@link #onRequestMessage(Object, CallStreamObserver)} dispatches work to other threads,
+	 *     rather than processing synchronously, this will be the maximum number of request messages
+	 *     processed concurrently. It should usually be equal or slightly bigger than the size of
+	 *     the threadPool the work is dispatched to, to account for the delivery delay of request
+	 *     messages from clients.
 	 */
 	protected ConcurrentRequestObserver(
 			ServerCallStreamObserver<ResponseT> responseObserver,
-			int numberOfConcurrentRequests) {
+			int numberOfInitiallyRequestedMessages) {
 		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
-		responseObserver.request(numberOfConcurrentRequests);
+		responseObserver.request(numberOfInitiallyRequestedMessages);
 		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
 	}
 
