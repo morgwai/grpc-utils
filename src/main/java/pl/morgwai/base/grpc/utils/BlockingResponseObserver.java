@@ -11,21 +11,20 @@ import io.grpc.stub.StreamObserver;
  * Response observer for a client side that blocks until response is completed with either
  * {@link #onCompleted()} or {@link #onError(Throwable)}.
  * <p>
- * Typical usage:
+ * Typical usage:</p>
  * <pre>
- *var responseObserver = new BlockingResponseObserver&lt;ResponseMessage&gt;(response -&gt; {
- *    // handle ResponseMessage response here...
- *});
- *myGrpcServiceStub.myRemoteProcedure(someRequest, responseObserver);
- *try {
- *    responseObserver.awaitCompletion();
- *    // continue positive flow here...
- *} catch (InterruptedException e) {  // often unreachable code
- *} catch (ErrorReportedException e) {
- *    Throwable reportedError = e.getCause();
- *    // handle error that was reported via onError(reportedError) here...
- *}
- * </pre></p>
+ * var responseObserver = new BlockingResponseObserver&lt;ResponseMessage&gt;(response -&gt; {
+ *     // handle ResponseMessage response here...
+ * });
+ * myGrpcServiceStub.myRemoteProcedure(someRequest, responseObserver);
+ * try {
+ *     responseObserver.awaitCompletion();
+ *     // continue positive flow here...
+ * } catch (InterruptedException e) {  // often unreachable code
+ * } catch (ErrorReportedException e) {
+ *     Throwable reportedError = e.getCause();
+ *     // handle error that was reported via onError(reportedError) here...
+ * }</pre>
  */
 public class BlockingResponseObserver<T> implements StreamObserver<T> {
 

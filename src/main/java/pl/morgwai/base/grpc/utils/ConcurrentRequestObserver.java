@@ -21,24 +21,23 @@ import io.grpc.stub.StreamObservers;
  * flow control to maintain desired number of request messages processed concurrently and prevent
  * excessive buffering.
  * <p>
- * Typical usage:
+ * Typical usage:</p>
  * <pre>
- *public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
- *        StreamObserver&lt;ResponseMessage&gt; responseObserver) {
- *    return new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
- *        (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
- *        executor.getMaximumPoolSize() + 1,
- *        (requestMessage, singleRequestMessageResponseObserver) -&gt; {
- *            executor.execute(() -&gt; {
- *                var responseMessage = process(requestMessage);
- *                singleRequestMessageResponseObserver.onNext(responseMessage);
- *                singleRequestMessageResponseObserver.onCompleted();
- *            });
- *        },
- *        (error) -&gt; log.info(error)
- *    );
- *}
- * </pre></p>
+ * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
+ *         StreamObserver&lt;ResponseMessage&gt; responseObserver) {
+ *     return new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
+ *         (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
+ *         executor.getMaximumPoolSize() + 1,
+ *         (requestMessage, singleRequestMessageResponseObserver) -&gt; {
+ *             executor.execute(() -&gt; {
+ *                 var responseMessage = process(requestMessage);
+ *                 singleRequestMessageResponseObserver.onNext(responseMessage);
+ *                 singleRequestMessageResponseObserver.onCompleted();
+ *             });
+ *         },
+ *         (error) -&gt; log.info(error)
+ *     );
+ * }</pre>
  * <p>
  * Once response observers for all request messages are closed and the client closes his request
  * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.</p>

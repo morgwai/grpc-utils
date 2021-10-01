@@ -21,80 +21,78 @@ import io.grpc.stub.StreamObserver;
  * <p>
  * Setting an instance using {@link CallStreamObserver#setOnReadyHandler(Runnable)
  * setOnReadyHandler(dispatchingOnReadyHandler)} will eventually have similar effects as the below
- * pseudo-code:
+ * pseudo-code:</p>
  * <pre>
- *for (int i = 0; i &lt; numberOfTasks; i++) taskExecutor.execute(() -&gt; {
- *    try {
- *        while ( ! completionIndicator.apply(i))
- *            streamObserver.onNext(messageProducer.apply(i));
- *        if (allTasksCompleted()) streamObserver.onCompleted();
- *    } catch (Throwable t) {
- *        var toReport = handleException(taskNumber, throwable);
- *        if (toReport != null) streamObserver.onError(toReport);
- *    } finally {
- *        cleanupHandler.accept(i);
- *    }
- *});
- * </pre>
+ * for (int i = 0; i &lt; numberOfTasks; i++) taskExecutor.execute(() -&gt; {
+ *     try {
+ *         while ( ! completionIndicator.apply(i))
+ *             streamObserver.onNext(messageProducer.apply(i));
+ *         if (allTasksCompleted()) streamObserver.onCompleted();
+ *     } catch (Throwable t) {
+ *         var toReport = handleException(taskNumber, throwable);
+ *         if (toReport != null) streamObserver.onError(toReport);
+ *     } finally {
+ *         cleanupHandler.accept(i);
+ *     }
+ * });</pre>
+ * <p>
  * However, calls to {@code streamObserver} are properly synchronized and the work is automatically
  * suspended/resumed whenever {@link #streamObserver} becomes unready/ready and executor's threads
  * are <b>released</b> during time when observer is unready.</p>
  * <p>
- * Typical usage:
+ * Typical usage:</p>
  * <pre>
- *public void myServerStreamingMethod(
- *        RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *    var state = new MyCallState(request, NUMBER_OF_TASKS);
- *    var responseObserver =
- *            (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
- *    responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
- *    final var handler = new DispatchingServerStreamingCallHandler&lt;&gt;(
- *        responseObserver,
- *        taskExecutor,
- *        NUMBER_OF_TASKS,
- *        (i) -&gt; state.isCompleted(i),
- *        (i) -&gt; state.produceNextResponseMessage(i),
- *        (i, error) -&gt; {
- *            state.fail(error);  // interrupt other tasks
- *            if (error instanceof StatusRuntimeException) return null;
- *            return Status.INTERNAL.asException();
- *        },
- *        (i) -&gt; state.cleanup(i)
- *    );
- *    responseObserver.setOnReadyHandler(handler);
- *}
- * </pre></p>
+ * public void myServerStreamingMethod(
+ *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+ *     var state = new MyCallState(request, NUMBER_OF_TASKS);
+ *     var responseObserver =
+ *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
+ *     responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
+ *     final var handler = new DispatchingServerStreamingCallHandler&lt;&gt;(
+ *         responseObserver,
+ *         taskExecutor,
+ *         NUMBER_OF_TASKS,
+ *         (i) -&gt; state.isCompleted(i),
+ *         (i) -&gt; state.produceNextResponseMessage(i),
+ *         (i, error) -&gt; {
+ *             state.fail(error);  // interrupt other tasks
+ *             if (error instanceof StatusRuntimeException) return null;
+ *             return Status.INTERNAL.asException();
+ *         },
+ *         (i) -&gt; state.cleanup(i)
+ *     );
+ *     responseObserver.setOnReadyHandler(handler);
+ * }</pre>
  * <p>
  * <b>NOTE:</b> this class is not suitable for cases where executor's thread should not be released,
  * such as JDBC/JPA processing where executor threads correspond to pooled connections that must be
  * retained in order not to lose given DB transaction/cursor. In such cases processing should be
- * implemented similar as the below code:
+ * implemented similar as the below code:</p>
  * <pre>
- *public void myServerStreamingMethod(
- *        RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *    responseObserver.setOnReadyHandler(() -&gt; {
- *        synchronized (responseObserver) {
- *            responseObserver.notify();
- *        }
- *    });
- *    jdbcExecutor.execute(() -&gt; {
- *        try {
- *            var state = new MyCallState(request);
- *            while ( ! state.isCompleted()) {
- *                synchronized (responseObserver) {
- *                    while ( ! responseObserver.isReady()) responseObserver.wait();
- *                }
- *                responseObserver.onNext(state.produceNextResponseMessage());
- *            }
- *            responseObserver.onCompleted();
- *        } catch (Throwable t) {
- *            if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
- *        } finally {
- *            state.cleanup();
- *        }
- *    });
- *}
- * </pre></p>
+ * public void myServerStreamingMethod(
+ *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+ *     responseObserver.setOnReadyHandler(() -&gt; {
+ *         synchronized (responseObserver) {
+ *             responseObserver.notify();
+ *         }
+ *     });
+ *     jdbcExecutor.execute(() -&gt; {
+ *         try {
+ *             var state = new MyCallState(request);
+ *             while ( ! state.isCompleted()) {
+ *                 synchronized (responseObserver) {
+ *                     while ( ! responseObserver.isReady()) responseObserver.wait();
+ *                 }
+ *                 responseObserver.onNext(state.produceNextResponseMessage());
+ *             }
+ *             responseObserver.onCompleted();
+ *         } catch (Throwable t) {
+ *             if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
+ *         } finally {
+ *             state.cleanup();
+ *         }
+ *     });
+ * }</pre>
  */
 public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
