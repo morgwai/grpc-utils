@@ -9,7 +9,7 @@ Some helpful classes when developing gRPC services.<br/>
 ## MAIN USER CLASSES
 
 ### [DispatchingOnReadyHandler](src/main/java/pl/morgwai/base/grpc/utils/DispatchingOnReadyHandler.java)
-Handles streaming messages to a `CallStreamObserver` from multiple threads with respect to flow-control to ensure that no excessive buffering occurs.
+Streams messages to a `CallStreamObserver` from multiple threads with respect to flow-control to ensure that no excessive buffering occurs.
 
 ### [ConcurrentRequestObserver](src/main/java/pl/morgwai/base/grpc/utils/ConcurrentRequestObserver.java)
 A request `StreamObserver` for bi-di streaming methods that dispatch work to multiple threads and don't care about the order of responses. Handles all the synchronization and manual flow control to maintain desired level of concurrency and prevent excessive buffering.

@@ -16,8 +16,8 @@ import io.grpc.stub.StreamObserver;
 
 
 /**
- * Handles streaming of messages to a {@link CallStreamObserver} from multiple threads with respect
- * to flow-control to ensure that no excessive buffering occurs.
+ * Streams messages to a {@link CallStreamObserver} from multiple threads with respect to
+ * flow-control to ensure that no excessive buffering occurs.
  * <p>
  * Setting an instance using {@link CallStreamObserver#setOnReadyHandler(Runnable)
  * setOnReadyHandler(dispatchingOnReadyHandler)} will eventually have similar effects as the below
@@ -99,7 +99,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	@FunctionalInterface
-	public static interface ThrowingFunction<ParamT, ResultT> {
+	public interface ThrowingFunction<ParamT, ResultT> {
 		ResultT apply(ParamT param) throws Exception;
 	}
 
@@ -149,14 +149,14 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		this(streamObserver, taskExecutor, numberOfTasks);
 		this.completionIndicator = completionIndicator::apply;
 		this.messageProducer = messageProducer::apply;
-		this.exceptionHandler = (i, e) -> {
-			if ( ! (e instanceof StatusRuntimeException)) {
+		this.exceptionHandler = (taskNumber, excp) -> {
+			if ( ! (excp instanceof StatusRuntimeException)) {
 				synchronized (lock) {
-					streamObserver.onError(e);
+					streamObserver.onError(excp);
 				}
 			}
-			if (e instanceof Error) throw (Error) e;
-			if (e instanceof RuntimeException) throw (RuntimeException) e;
+			if (excp instanceof Error) throw (Error) excp;
+			if (excp instanceof RuntimeException) throw (RuntimeException) excp;
 			return null;
 		};
 	}
@@ -181,8 +181,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			streamObserver,
 			taskExecutor,
 			1,
-			(i) -> completionIndicator.get(),
-			(i) -> messageProducer.get()
+			(taskNumber) -> completionIndicator.get(),
+			(taskNumber) -> messageProducer.get()
 		);
 	}
 
@@ -208,10 +208,10 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			streamObserver,
 			taskExecutor,
 			1,
-			(i) -> completionIndicator.call(),
-			(i) -> messageProducer.call(),
-			(i, error) -> exceptionHandler.apply(error),
-			(i) -> cleanupHandler.run()
+			(taskNumber) -> completionIndicator.call(),
+			(taskNumber) -> messageProducer.call(),
+			(taskNumber, excp) -> exceptionHandler.apply(excp),
+			(taskNumber) -> cleanupHandler.run()
 		);
 	}
 
@@ -237,7 +237,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	Executor taskExecutor;
 	int numberOfTasks;
 	boolean[] taskRunning;
-	Object lock = new Object();
+	final Object lock = new Object();
 
 	AtomicInteger completionCount = new AtomicInteger(0);
 	boolean errorReported = false;
@@ -248,8 +248,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Indicates if the task {@code i} is completed.
 	 * Default implementation calls {@link #completionIndicator}.
 	 */
-	protected boolean isCompleted(int i) throws Exception {
-		return completionIndicator.apply(i);
+	protected boolean isCompleted(int taskNumber) throws Exception {
+		return completionIndicator.apply(taskNumber);
 	}
 
 	/**
@@ -263,8 +263,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Asks task {@code i} to produce a next message.
 	 * Default implementation calls {@link #messageProducer}.
 	 */
-	protected ResponseT produceMessage(int i) throws Exception {
-		return messageProducer.apply(i);
+	protected ResponseT produceMessage(int taskNumber) throws Exception {
+		return messageProducer.apply(taskNumber);
 	}
 
 	/**
@@ -278,8 +278,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Handles exception thrown by task {@code i}.
 	 * Default implementation calls {@link #exceptionHandler}.
 	 */
-	protected Throwable handleException(int i, Throwable error) {
-		return exceptionHandler.apply(i, error);
+	protected Throwable handleException(int taskNumber, Throwable excp) {
+		return exceptionHandler.apply(taskNumber, excp);
 	}
 
 	/**
@@ -293,8 +293,8 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Cleans up after task {@code i} is completed.
 	 * Default implementation calls {@link #cleanupHandler}.
 	 */
-	protected void cleanup(int i) {
-		if (cleanupHandler != null) cleanupHandler.accept(i);
+	protected void cleanup(int taskNumber) {
+		if (cleanupHandler != null) cleanupHandler.accept(taskNumber);
 	}
 
 	/**
@@ -320,21 +320,21 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	public void run() {
 		synchronized (lock) {
 			if (errorReported) return;
-			for (int i = 0; i < numberOfTasks; i++) {
+			for (int taskNumber = 0; taskNumber < numberOfTasks; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
-				if (taskRunning[i]) continue;
-				taskRunning[i] = true;
-				final var taskNumber = Integer.valueOf(i);
+				if (taskRunning[taskNumber]) continue;
+				taskRunning[taskNumber] = true;
+				final var taskNumberWrapper = Integer.valueOf(taskNumber);
 				taskExecutor.execute(new Runnable() {
 
-					@Override public void run() { handleSingleReadinessCycle(taskNumber); }
+					@Override public void run() { handleSingleReadinessCycle(taskNumberWrapper); }
 
 					@Override public String toString() {
 						return taskToStringHandler != null
-								? taskToStringHandler.apply(taskNumber)
-								: "dispatchedOnReadyHandler-task-" + taskNumber;
+								? taskToStringHandler.apply(taskNumberWrapper)
+								: "dispatchedOnReadyHandler-task-" + taskNumberWrapper;
 					}
 				});
 			}

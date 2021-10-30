@@ -41,7 +41,7 @@ public class BlockingResponseObserverTest {
 		final var worker = new Thread(() -> {
 			try {
 				Thread.sleep(10l);
-			} catch (InterruptedException e) {}
+			} catch (InterruptedException ignored) {}
 			for (int i = 0; i < inputData.length; i++) {
 				inputData[i] = new ResponseMessage(i);
 				responseObserver.onNext(inputData[i]);
@@ -70,7 +70,7 @@ public class BlockingResponseObserverTest {
 		final var worker = new Thread(() -> {
 			try {
 				Thread.sleep(10l);
-			} catch (InterruptedException e) {}
+			} catch (InterruptedException ignored) {}
 			responseObserver.onError(reportedError);
 		});
 
@@ -93,7 +93,7 @@ public class BlockingResponseObserverTest {
 		final var worker = new Thread(() -> {
 			try {
 				Thread.sleep(20l);
-			} catch (InterruptedException e) {}
+			} catch (InterruptedException ignored) {}
 			synchronized (responseObserver) {
 				responseObserver.notifyAll();
 			}
@@ -112,7 +112,7 @@ public class BlockingResponseObserverTest {
 
 	@Test
 	public void completedBeforeAwait() throws InterruptedException, ErrorReportedException {
-		responseObserver.onCompleted();;
+		responseObserver.onCompleted();
 
 		responseObserver.awaitCompletion(1l);
 
@@ -143,7 +143,7 @@ public class BlockingResponseObserverTest {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
 					BlockingResponseObserverTest.class.getPackageName() + ".level"));
-		} catch (Exception e) {}
+		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}

@@ -71,7 +71,7 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	public Throwable getError() { return error; }
 	Throwable error;
 
-	Object lock = new Object();
+	final Object lock = new Object();
 
 
 

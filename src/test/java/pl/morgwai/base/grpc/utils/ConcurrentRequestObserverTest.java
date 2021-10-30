@@ -72,7 +72,7 @@ public class ConcurrentRequestObserverTest {
 			if (maxRequestDeliveryDelayMillis > 0l) {
 				try {
 					Thread.sleep(requestIdSequence % (maxRequestDeliveryDelayMillis + 1));
-				} catch (InterruptedException e) {}
+				} catch (InterruptedException ignored) {}
 			}
 
 			synchronized (deliveryLock) {
@@ -228,17 +228,16 @@ public class ConcurrentRequestObserverTest {
 				if (requestId <= numberOfSeriesToPass * numberOfConcurrentRequests) {
 					try {
 						Thread.sleep(3l);  // processing delay
-					} catch (InterruptedException e) {}
+					} catch (InterruptedException ignored) {}
 					individualObserver.onNext(new ResponseMessage(requestId));
 					individualObserver.onCompleted();
-					return;
 				} else if (requestId > (numberOfSeriesToPass + 1) * numberOfConcurrentRequests) {
 					responseObserver.onError(
 							new Exception("no messages should be requested after an error"));
 				} else {
 					try {
 						individualObserver.onError(error);
-					} catch (IllegalStateException e) {}  // subsequent calls will throw
+					} catch (IllegalStateException ignored) {}  // subsequent calls will throw
 				}
 			}),
 			newErrorHandler(Thread.currentThread())
@@ -358,7 +357,7 @@ public class ConcurrentRequestObserverTest {
 					try {
 						individualObserver.onNext(new ResponseMessage(requestMessage.id));
 						individualObserver.onCompleted();
-						individualObserver.onError(new Exception());;
+						individualObserver.onError(new Exception());
 						exceptionThrownHolder[0] = false;
 					} catch (IllegalStateException e) {
 						exceptionThrownHolder[0] = true;
@@ -409,7 +408,7 @@ public class ConcurrentRequestObserverTest {
 		final long maxProcessingDelayMillis,
 		final int responsesPerRequest,
 		final int numberOfConcurrentRequests,
-		final long timoutMillis
+		final long timeoutMillis
 	) throws InterruptedException {
 		final var userExecutor = new LoggingExecutor("userExecutor", numberOfConcurrentRequests);
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
@@ -429,7 +428,7 @@ public class ConcurrentRequestObserverTest {
 							);
 							try {
 								Thread.sleep(processingDelay);
-							} catch (InterruptedException e) {}
+							} catch (InterruptedException ignored) {}
 							individualObserver.onNext(
 									new ResponseMessage(requestMessage.id));
 							if (responseCount.incrementAndGet() == responsesPerRequest) {
@@ -451,11 +450,11 @@ public class ConcurrentRequestObserverTest {
 		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timeoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timeoutMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis, timeoutMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * responsesPerRequest, responseObserver.getOutputData().size());
@@ -500,7 +499,7 @@ public class ConcurrentRequestObserverTest {
 								|| (requestId == 2 && handlerCallCounters[1] <= i)
 							) try {
 								individualObserver.wait();
-							} catch (InterruptedException e) {}
+							} catch (InterruptedException ignored) {}
 						}
 						individualObserver.onNext(new ResponseMessage(requestMessage.id));
 					}
@@ -556,7 +555,7 @@ public class ConcurrentRequestObserverTest {
 		final int responsesPerTask,
 		final int numberOfConcurrentRequests,
 		final int executorThreads,
-		final long timoutMillis
+		final long timeoutMillis
 	) throws InterruptedException {
 		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
 		final var userExecutor = new LoggingExecutor("userExecutor", executorThreads);
@@ -575,7 +574,7 @@ public class ConcurrentRequestObserverTest {
 								((requestMessage.id + responseCounters[i]) % halfProcessingDelay);
 							try {
 								Thread.sleep(processingDelay);
-							} catch (InterruptedException e) {}
+							} catch (InterruptedException ignored) {}
 						}
 						responseCounters[i]++;
 						return new ResponseMessage(requestMessage.id);
@@ -595,11 +594,11 @@ public class ConcurrentRequestObserverTest {
 		responseObserver.startRequestDelivery(
 				requestObserver,
 				new RequestProducer(numberOfRequests, maxRequestDeliveryDelayMillis));
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timoutMillis));
+		responseObserver.awaitFinalization(getRemainingMillis(startMillis, timeoutMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis, timoutMillis));
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis, timeoutMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis, timeoutMillis));
 
 		assertEquals("correct number of messages should be written",
 				numberOfRequests * tasksPerRequest * responsesPerTask,
@@ -621,7 +620,7 @@ public class ConcurrentRequestObserverTest {
 		if (unstartedTasks.size() == 0 && activeCount == 0) {
 			log.warning(executor.getName() + " not terminated, but no remaining tasks :?");
 			return;
-		};
+		}
 		log.severe(executor.getName() + " has " + activeCount + " active tasks remaining");
 		for (var task: unstartedTasks) log.severe(executor.getName() + " unstarted " + task);
 		fail(executor.getName() + " should shutdown cleanly");
@@ -688,7 +687,7 @@ public class ConcurrentRequestObserverTest {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
 					ConcurrentRequestObserverTest.class.getPackageName() + ".level"));
-		} catch (Exception e) {}
+		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		FakeResponseObserver.getLogger().setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);

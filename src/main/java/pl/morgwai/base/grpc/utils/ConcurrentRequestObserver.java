@@ -86,7 +86,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 	/**
 	 * Default implementation calls {@link #errorHandler}.
-	 * @see {@link StreamObserver#onError(Throwable)}.
+	 * @see StreamObserver#onError(Throwable)
 	 */
 	@Override
 	public void onError(Throwable t) {
@@ -148,7 +148,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
 		responseObserver.request(numberOfInitiallyRequestedMessages);
-		responseObserver.setOnReadyHandler(() -> onResponseObserverReady());
+		responseObserver.setOnReadyHandler(this::onResponseObserverReady);
 	}
 
 
@@ -159,7 +159,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	int joblessThreadCount = 0;
 	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
-	protected Object lock = new Object();
+	protected final Object lock = new Object();
 
 
 

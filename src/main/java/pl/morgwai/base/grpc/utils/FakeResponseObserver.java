@@ -169,7 +169,7 @@ public class FakeResponseObserver<ResponseT>
 	private void markObserverReady(long delayMillis) {
 		try {
 			Thread.sleep(delayMillis);
-		} catch (InterruptedException e) {}
+		} catch (InterruptedException ignored) {}
 		synchronized (listenerLock) {
 			if ( ! ready) {
 				log.fine("marking response observer ready again");
@@ -244,7 +244,7 @@ public class FakeResponseObserver<ResponseT>
 			synchronized (finalizationGuard) {
 				finalizedCount++;
 				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new IllegalStateException("multipe finalizations");
+					throw new IllegalStateException("multiple finalizations");
 				}
 				finalizationGuard.notify();
 			}
@@ -265,7 +265,7 @@ public class FakeResponseObserver<ResponseT>
 			synchronized (finalizationGuard) {
 				finalizedCount++;
 				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new IllegalStateException("multipe finalizations");
+					throw new IllegalStateException("multiple finalizations");
 				}
 				reportedError = t;
 				finalizationGuard.notify();
@@ -285,8 +285,8 @@ public class FakeResponseObserver<ResponseT>
 
 	/**
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
-	 * {@link #onError(Throwable)}) occurs or {@code timoutMillis} passes.
-	 * @throws RuntimeException if {@code timoutMillis} is exceeded.
+	 * {@link #onError(Throwable)}) occurs or {@code timeoutMillis} passes.
+	 * @throws RuntimeException if {@code timeoutMillis} is exceeded.
 	 */
 	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
 		final var startMillis = System.currentTimeMillis();
