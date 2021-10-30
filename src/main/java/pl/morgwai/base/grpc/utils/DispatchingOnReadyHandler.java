@@ -1,6 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -119,7 +120,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		int numberOfTasks,
 		ThrowingFunction<Integer, Boolean> completionIndicator,
 		ThrowingFunction<Integer, ResponseT> messageProducer,
-		BiFunction<Integer, Throwable, Throwable> exceptionHandler,
+		BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler,
 		Consumer<Integer> cleanupHandler
 	) {
 		this(streamObserver, taskExecutor, numberOfTasks);
@@ -157,7 +158,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			}
 			if (excp instanceof Error) throw (Error) excp;
 			if (excp instanceof RuntimeException) throw (RuntimeException) excp;
-			return null;
+			return Optional.empty();
 		};
 	}
 
@@ -201,7 +202,7 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		Executor taskExecutor,
 		Callable<Boolean> completionIndicator,
 		Callable<ResponseT> messageProducer,
-		Function<Throwable, Throwable> exceptionHandler,
+		Function<Throwable, Optional<Throwable>> exceptionHandler,
 		Runnable cleanupHandler
 	) {
 		this(
@@ -278,14 +279,14 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 * Handles exception thrown by task {@code i}.
 	 * Default implementation calls {@link #exceptionHandler}.
 	 */
-	protected Throwable handleException(int taskNumber, Throwable excp) {
+	protected Optional<Throwable> handleException(int taskNumber, Throwable excp) {
 		return exceptionHandler.apply(taskNumber, excp);
 	}
 
 	/**
 	 * Called by {@link #handleException(int, Throwable)}.
 	 */
-	protected BiFunction<Integer, Throwable, Throwable> exceptionHandler;
+	protected BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler;
 
 
 
@@ -375,13 +376,13 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			}
 			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
 		} catch (Throwable throwable) {
-			var toReport = handleException(taskNumber, throwable);
-			if (toReport != null) {
-				synchronized (lock) {
-					if ( ! errorReported) {
-						streamObserver.onError(toReport);
-						errorReported = true;
-					}
+			var hadnlingResult = handleException(taskNumber, throwable);
+			if (hadnlingResult.isEmpty()) return;
+			var toReport = hadnlingResult.get();
+			synchronized (lock) {
+				if ( ! errorReported) {
+					streamObserver.onError(toReport);
+					errorReported = true;
 				}
 			}
 		} finally {

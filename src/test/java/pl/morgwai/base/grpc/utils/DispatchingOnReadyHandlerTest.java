@@ -1,6 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -60,7 +61,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var numberOfResponses = 10;
 		responseObserver.outputBufferSize = 3;
 		responseObserver.unreadyDurationMillis = 5l;
-		handler = new DispatchingOnReadyHandler<Integer>(
+		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
 			userExecutor,
 			() -> responseCount >= numberOfResponses,
@@ -68,7 +69,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				return error;
+				return Optional.of(error);
 			},
 			() -> {
 				log.fine("cleanup");
@@ -105,7 +106,7 @@ public class DispatchingOnReadyHandlerTest {
 		cleanupCounters = new int[numberOfTasks];
 		responseObserver.outputBufferSize = 3;
 		responseObserver.unreadyDurationMillis = 5l;
-		handler = new DispatchingOnReadyHandler<Integer>(
+		handler = new DispatchingOnReadyHandler<>(
 			responseObserver,
 			userExecutor,
 			numberOfTasks,
@@ -114,7 +115,7 @@ public class DispatchingOnReadyHandlerTest {
 			(i, error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				return error;
+				return Optional.of(error);
 			},
 			(i) -> {
 				log.fine("cleanup");
@@ -173,7 +174,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
 				caughtError = error;
-				return error;
+				return Optional.of(error);
 			},
 			() -> {
 				log.fine("cleanup");
@@ -225,7 +226,7 @@ public class DispatchingOnReadyHandlerTest {
 			(error) -> {
 				if (log.isLoggable(Level.FINE)) log.fine("exception " + error);
 				caughtError = error;
-				return error;
+				return Optional.of(error);
 			},
 			() -> {
 				log.fine("cleanup");
@@ -273,7 +274,7 @@ public class DispatchingOnReadyHandlerTest {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
 					DispatchingOnReadyHandlerTest.class.getPackageName() + ".level"));
-		} catch (Exception e) {}
+		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		FakeResponseObserver.getLogger().setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
