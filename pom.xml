@@ -42,7 +42,7 @@
 		<maven.compiler.target>11</maven.compiler.target>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<utils.version>1.8</utils.version>
-		<grpc.version>1.40.0</grpc.version>
+		<grpc.version>1.42.0</grpc.version>
 	</properties>
 
 	<dependencies>
