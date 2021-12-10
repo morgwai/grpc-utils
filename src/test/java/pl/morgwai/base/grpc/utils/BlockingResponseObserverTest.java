@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import io.grpc.stub.ClientCallStreamObserver;
+import org.easymock.EasyMockSupport;
+import org.easymock.Mock;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -15,12 +18,13 @@ import static org.junit.Assert.*;
 
 
 
-public class BlockingResponseObserverTest {
+public class BlockingResponseObserverTest extends EasyMockSupport {
 
 
 
-	BlockingResponseObserver<ResponseMessage> responseObserver;
+	BlockingResponseObserver<Integer, ResponseMessage> responseObserver;
 	List<ResponseMessage> receivedData;
+	@Mock ClientCallStreamObserver<Integer> requestObserver;
 
 
 
@@ -31,6 +35,7 @@ public class BlockingResponseObserverTest {
 			if (log.isLoggable(Level.FINER)) log.finer("received " + msg);
 			receivedData.add(msg);
 		});
+		requestObserver = mock(ClientCallStreamObserver.class);
 	}
 
 
@@ -121,6 +126,22 @@ public class BlockingResponseObserverTest {
 
 
 
+	@Test
+	public void testCancelOnException() throws Exception {
+		final var exception = new RuntimeException("expected");
+		responseObserver = new BlockingResponseObserver<>((msg) -> { throw exception; });
+		requestObserver.cancel(null, exception);
+		replayAll();
+
+		responseObserver.beforeStart(requestObserver);
+		responseObserver.onNext(new ResponseMessage(7));
+		responseObserver.awaitCompletion(10l);
+
+		verifyAll();
+	}
+
+
+
 	static class ResponseMessage {
 
 		int id;
@@ -147,4 +168,5 @@ public class BlockingResponseObserverTest {
 		log.setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}
+
 }

@@ -5,7 +5,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import io.grpc.stub.StreamObserver;
+import io.grpc.stub.ClientCallStreamObserver;
+import io.grpc.stub.ClientResponseObserver;
 
 
 
@@ -28,35 +29,8 @@ import io.grpc.stub.StreamObserver;
  *     // handle error that was reported via onError(reportedError) here...
  * }</pre>
  */
-public class BlockingResponseObserver<T> implements StreamObserver<T> {
-
-
-
-	/**
-	 * Called by {@link #onNext(Object)}.
-	 */
-	protected Consumer<T> responseHandler;
-
-	/**
-	 * Initializes {@link #responseHandler}.
-	 */
-	public BlockingResponseObserver(Consumer<T> responseHandler) {
-		this.responseHandler = responseHandler;
-	}
-
-	/**
-	 * Calls {@link #responseHandler}.
-	 */
-	@Override
-	public void onNext(T response) {
-		responseHandler.accept(response);
-	}
-
-	/**
-	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
-	 * of providing a lambda.
-	 */
-	protected BlockingResponseObserver() {}
+public class BlockingResponseObserver<RequestT, ResponseT>
+		implements ClientResponseObserver<RequestT, ResponseT> {
 
 
 
@@ -72,6 +46,72 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	 */
 	public Throwable getError() { return error; }
 	volatile Throwable error;
+
+	/**
+	 * Returns {@link ClientCallStreamObserver requestObserver} passed to
+	 * {@link #beforeStart(ClientCallStreamObserver)}.
+	 */
+	public ClientCallStreamObserver<RequestT> getRequestObserver() { return requestObserver; }
+	ClientCallStreamObserver<RequestT> requestObserver;
+
+	/**
+	 * Called by {@link #onNext(Object)}.
+	 */
+	protected Consumer<ResponseT> responseHandler;
+
+
+
+	/**
+	 * Initializes {@link #responseHandler}.
+	 */
+	public BlockingResponseObserver(Consumer<ResponseT> responseHandler) {
+		this.responseHandler = responseHandler;
+	}
+
+
+
+	/**
+	 * Stores {@code requestObserver} (so that it can be later retrieved with
+	 * {@link #getRequestObserver()}) and calls {@link #beforeStart()}.
+	 */
+	@Override
+	public final void beforeStart(final ClientCallStreamObserver<RequestT> requestObserver) {
+		this.requestObserver = requestObserver;
+		beforeStart();
+	}
+
+	/**
+	 * Called by {@link #beforeStart(ClientCallStreamObserver)}. Can be overridden if for example
+	 * to obtain reference to {@link #getRequestObserver() requestObserver}.
+	 * @see ClientResponseObserver#beforeStart(ClientCallStreamObserver)
+	 */
+	protected void beforeStart() {}
+
+
+
+	/**
+	 * Calls {@link #responseHandler}. If the handler throws anything, the call will be
+	 * {@link ClientCallStreamObserver#cancel(String, Throwable) cancelled}.
+	 */
+	@Override
+	public void onNext(ResponseT response) {
+		try {
+			responseHandler.accept(response);
+		} catch (Throwable t) {
+			requestObserver.cancel(null, t);
+			if (t instanceof Error) throw (Error) t;
+		}
+	}
+
+
+
+	/**
+	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
+	 * of providing a lambda.
+	 */
+	protected BlockingResponseObserver() {}
+
+
 
 	final CountDownLatch latch = new CountDownLatch(1);
 
