@@ -1,6 +1,8 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import io.grpc.stub.StreamObserver;
@@ -63,15 +65,15 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	 * called.
 	 */
 	public boolean isCompleted() { return completed; }
-	boolean completed = false;
+	volatile boolean completed = false;
 
 	/**
 	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
 	 */
 	public Throwable getError() { return error; }
-	Throwable error;
+	volatile Throwable error;
 
-	final Object lock = new Object();
+	final CountDownLatch latch = new CountDownLatch(1);
 
 
 
@@ -84,27 +86,21 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	 */
 	public boolean awaitCompletion(long timeoutMillis)
 			throws ErrorReportedException, InterruptedException {
-		synchronized (lock) {
-			if (timeoutMillis == 0l) {
-				while ( ! completed) lock.wait();
-			} else {
-				final var startMillis = System.currentTimeMillis();
-				var currentMillis = startMillis;
-				while ( ! completed && currentMillis - startMillis < timeoutMillis) {
-					lock.wait(timeoutMillis + startMillis - currentMillis);
-					currentMillis = System.currentTimeMillis();
-				}
-			}
-			if (error != null) throw new ErrorReportedException(error);
-			return completed;
+		if (timeoutMillis == 0l) {
+			latch.await();
+		} else {
+			latch.await(timeoutMillis, TimeUnit.MILLISECONDS);
 		}
+		if (error != null) throw new ErrorReportedException(error);
+		return completed;
 	}
 
 	/**
-	 * Calls {@link #awaitCompletion(long) awaitCompletion(0l)}.
+	 * Equivalent to {@link #awaitCompletion(long) awaitCompletion(0l)}.
 	 */
 	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
-		awaitCompletion(0l);
+		latch.await();
+		if (error != null) throw new ErrorReportedException(error);
 	}
 
 
@@ -114,10 +110,8 @@ public class BlockingResponseObserver<T> implements StreamObserver<T> {
 	 */
 	@Override
 	public void onCompleted() {
-		synchronized (lock) {
-			completed = true;
-			lock.notifyAll();
-		}
+		completed = true;
+		latch.countDown();
 	}
 
 
