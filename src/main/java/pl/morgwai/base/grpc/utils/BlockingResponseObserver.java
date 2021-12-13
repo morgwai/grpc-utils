@@ -126,21 +126,31 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Awaits up to {@code timeoutMillis} for {@link #onCompleted()} or {@link #onError(Throwable)}
-	 * to be called. If {@code timeoutMillis} is {@code 0} then waits without a timeout.
+	 * Awaits up to {@code timeout} of {@code unit} for {@link #onCompleted()} or
+	 * {@link #onError(Throwable)} to be called. If {@code timeout} is {@code 0} then awaits without
+	 * a timeout.
 	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
 	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
 	 *     <code>getCause()</code> will return the throwable passed as argument.
 	 */
-	public boolean awaitCompletion(long timeoutMillis)
+	public boolean awaitCompletion(long timeout, TimeUnit unit)
 			throws ErrorReportedException, InterruptedException {
-		if (timeoutMillis == 0l) {
+		if (timeout == 0l) {
 			latch.await();
 		} else {
-			latch.await(timeoutMillis, TimeUnit.MILLISECONDS);
+			latch.await(timeout, unit);
 		}
 		if (error != null) throw new ErrorReportedException(error);
 		return completed;
+	}
+
+	/**
+	 * Calls {@link #awaitCompletion(long, TimeUnit)
+	 * awaitCompletion(timeoutMillis, TimeUnit.MILLISECONDS)}.
+	 */
+	public boolean awaitCompletion(long timeoutMillis)
+			throws ErrorReportedException, InterruptedException {
+		return awaitCompletion(timeoutMillis, TimeUnit.MILLISECONDS);
 	}
 
 	/**
