@@ -59,6 +59,11 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	 */
 	protected Consumer<ResponseT> responseHandler;
 
+	/**
+	 * Called by {@link #beforeStart(ClientCallStreamObserver)}.
+	 */
+	protected Consumer<ClientCallStreamObserver<RequestT>> startHandler;
+
 
 
 	/**
@@ -68,24 +73,27 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		this.responseHandler = responseHandler;
 	}
 
+	/**
+	 * Initializes {@link #responseHandler} and {@link #startHandler}.
+	 */
+	public BlockingResponseObserver(
+			Consumer<ResponseT> responseHandler,
+			Consumer<ClientCallStreamObserver<RequestT>> startHandler) {
+		this.responseHandler = responseHandler;
+		this.startHandler = startHandler;
+	}
+
 
 
 	/**
 	 * Stores {@code requestObserver} (so that it can be later retrieved with
-	 * {@link #getRequestObserver()}) and calls {@link #beforeStart()}.
+	 * {@link #getRequestObserver()}) and calls {@link #startHandler}.
 	 */
 	@Override
 	public final void beforeStart(final ClientCallStreamObserver<RequestT> requestObserver) {
 		this.requestObserver = requestObserver;
-		beforeStart();
+		if (startHandler != null) startHandler.accept(requestObserver);
 	}
-
-	/**
-	 * Called by {@link #beforeStart(ClientCallStreamObserver)}. Can be overridden if for example
-	 * to obtain reference to {@link #getRequestObserver() requestObserver}.
-	 * @see ClientResponseObserver#beforeStart(ClientCallStreamObserver)
-	 */
-	protected void beforeStart() {}
 
 
 

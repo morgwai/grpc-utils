@@ -142,6 +142,24 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 
 
+	@Test
+	public void testBeforeStart() throws Exception {
+		final var requestObserverHolder = new Object[1];
+		responseObserver = new BlockingResponseObserver<>(
+			(msg) -> {},
+			(observer) -> requestObserverHolder[0] = observer
+		);
+		replayAll();
+
+		responseObserver.beforeStart(requestObserver);
+
+		assertSame("requestObserver passed to beforeStart should be passed to startHandler",
+				requestObserver, requestObserverHolder[0]);
+		verifyAll();
+	}
+
+
+
 	static class ResponseMessage {
 
 		int id;
