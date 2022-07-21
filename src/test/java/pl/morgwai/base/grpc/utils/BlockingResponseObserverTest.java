@@ -9,9 +9,7 @@ import java.util.logging.Logger;
 import io.grpc.stub.ClientCallStreamObserver;
 import org.easymock.EasyMockSupport;
 import org.easymock.Mock;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.*;
 import pl.morgwai.base.grpc.utils.BlockingResponseObserver.ErrorReportedException;
 
 import static org.junit.Assert.*;

@@ -9,12 +9,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.google.common.collect.Comparators;
-import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.StreamObserver;
+import io.grpc.stub.*;
 
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.*;
 
 import pl.morgwai.base.grpc.utils.FakeResponseObserver.LoggingExecutor;
 

@@ -4,9 +4,7 @@ package pl.morgwai.base.grpc.utils;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.ServerCallStreamObserver;
-import io.grpc.stub.StreamObserver;
+import io.grpc.stub.*;
 
 import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer;
 import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
