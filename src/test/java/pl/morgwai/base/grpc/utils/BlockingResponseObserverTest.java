@@ -143,7 +143,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 
 	@Test
-	public void testBeforeStart() throws Exception {
+	public void testBeforeStart() {
 		final var requestObserverHolder = new Object[1];
 		responseObserver = new BlockingResponseObserver<>(
 			(msg) -> {},

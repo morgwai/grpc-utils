@@ -376,9 +376,9 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			}
 			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
 		} catch (Throwable throwable) {
-			var hadnlingResult = handleException(taskNumber, throwable);
-			if (hadnlingResult.isEmpty()) return;
-			var toReport = hadnlingResult.get();
+			var handlingResult = handleException(taskNumber, throwable);
+			if (handlingResult.isEmpty()) return;
+			var toReport = handlingResult.get();
 			synchronized (lock) {
 				if ( ! errorReported) {
 					streamObserver.onError(toReport);

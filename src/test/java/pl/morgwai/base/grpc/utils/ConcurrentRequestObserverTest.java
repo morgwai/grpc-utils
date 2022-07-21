@@ -27,7 +27,7 @@ public class ConcurrentRequestObserverTest {
 
 
 	/**
-	 * Default timeout for most tests. Some tests use their own value.
+	 * Timeout for single-threaded, no-processing-delay operations.
 	 */
 	public static final long TIMEOUT_MILLIS = 500l;
 
@@ -667,7 +667,7 @@ public class ConcurrentRequestObserverTest {
 	}
 
 	static Comparator<ResponseMessage> responseComparator =
-			(msg1, msg2) -> Integer.compare(msg1.requestId, msg2.requestId);
+			Comparator.comparingInt(msg -> msg.requestId);
 
 
 

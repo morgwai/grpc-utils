@@ -156,7 +156,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	ServerCallStreamObserver<ResponseT> responseObserver;
 
 	boolean halfClosed = false;
-	int joblessThreadCount = 0;
+	int idleCount = 0;
 	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
 
 	protected final Object lock = new Object();
@@ -168,9 +168,9 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		synchronized (lock) {
 			// request 1 message for every thread that refrained from doing so when the buffer
 			// was too full
-			if (joblessThreadCount > 0 && ! halfClosed) {
-				responseObserver.request(joblessThreadCount);
-				joblessThreadCount = 0;
+			if (idleCount > 0 && ! halfClosed) {
+				responseObserver.request(idleCount);
+				idleCount = 0;
 			}
 
 			// copy ongoingRequests in case some of them get completed and try to remove themselves
@@ -266,7 +266,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 				if (responseObserver.isReady()) {
 					responseObserver.request(1);
 				} else {
-					joblessThreadCount++;
+					idleCount++;
 				}
 			}
 		}

@@ -18,7 +18,7 @@ import io.grpc.stub.StreamObserver;
  * (ie: <code>Streaming</code> / <code>Unary</code> prefix refers to client's type
  * (<code>Server</code> refers to <code>Call</code>), naming scheme here is not intuitive...).<br/>
  * When a call is received {@link ServerCallHandler#startCall(ServerCall, Metadata)} is called in
- * the intercepter chain, which returns a {@link ServerCall.Listener}, respectively either
+ * the interceptor chain, which returns a {@link ServerCall.Listener}, respectively either
  * {@link ServerCalls.StreamingServerCallHandler.StreamingServerCallListener} or
  * {@link ServerCalls.UnaryServerCallHandler.UnaryServerCallListener}.</p>
  * <p>
