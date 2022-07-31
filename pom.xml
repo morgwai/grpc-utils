@@ -39,7 +39,7 @@
 		<maven.compiler.release>11</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<utils.version>1.9</utils.version>
-		<grpc.version>1.42.1</grpc.version>
+		<grpc.version>1.47.0</grpc.version>
 	</properties>
 
 	<dependencies>
