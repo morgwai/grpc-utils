@@ -2,6 +2,7 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -10,7 +11,7 @@ import io.grpc.stub.*;
 
 
 /**
- * A request {@link StreamObserver} for bi-di streaming methods that dispatch work to multiple
+ * A request {@link StreamObserver} for bi-di streaming methods that may dispatch work to multiple
  * threads and don't care about the order of responses. Handles all the synchronization and manual
  * flow control to maintain desired number of request messages processed concurrently and prevent
  * excessive buffering.
@@ -19,58 +20,88 @@ import io.grpc.stub.*;
  * <pre>
  * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
  *         StreamObserver&lt;ResponseMessage&gt; responseObserver) {
- *     return new ConcurrentRequestObserver&lt;RequestMessage, ResponseMessage&gt;(
+ *     return new ConcurrentRequestObserver&lt;&gt;(
  *         (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
- *         executor.getMaximumPoolSize() + 1,
- *         (requestMessage, singleRequestMessageResponseObserver) -&gt; {
- *             executor.execute(() -&gt; {
- *                 var responseMessage = process(requestMessage);
- *                 singleRequestMessageResponseObserver.onNext(responseMessage);
- *                 singleRequestMessageResponseObserver.onCompleted();
- *             });
- *         },
+ *         MAX_CONCURRENT_REQUESTS,
+ *         (requestMessage, individualRequestMessageResponseObserver) -&gt; executor.execute(
+ *             () -&gt; {
+ *                 final var responseMessage = process(requestMessage);
+ *                 individualRequestMessageResponseObserver.onNext(responseMessage);
+ *                 individualRequestMessageResponseObserver.onCompleted();
+ *             }),
  *         (error) -&gt; log.info(error)
  *     );
  * }</pre>
  * <p>
  * Once response observers for all request messages are closed and the client closes his request
  * stream, <code>responseObserver.onCompleted()</code> is called <b>automatically</b>.</p>
+ * <p>
+ * Note that it is totally fine to not dispatch processing to other threads: this will result in
+ * sequential processing of requests with respect to flow-control.
+ * {@code numberOfInitiallyRequestedMessages} constructor param should usually be set to 1 in such
+ * cases.</p>
+ * <p>
+ * If one request message may produce multiple responses, this class can be combined with utilities
+ * like {@link StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)} or
+ * {@link DispatchingOnReadyHandler}:</p>
+ * <pre>
+ * class RequestProcessor implements Iterator<ResponseMessage> {
+ *     RequestProcessor(RequestMessage request) { ... }
+ *     public boolean hasNext() { ... }
+ *     public Response next() { ... }
+ * }
+ *
+ * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
+ *         StreamObserver&lt;ResponseMessage&gt; responseObserver) {
+ *     return new ConcurrentRequestObserver&lt;&gt;(
+ *         (ServerCallStreamObserver&lt;ResponseMessage&gt;) responseObserver,
+ *         MAX_CONCURRENT_REQUESTS,
+ *         (requestMessage, individualRequestMessageResponseObserver) -&gt; executor.execute(
+ *             () -&gt; StreamObservers.copyWithFlowControl(
+ *                 new RequestProcessor(requestMessage),
+ *                 individualRequestMessageResponseObserver
+ *             )
+ *         ),
+ *         (error) -&gt; log.info(error)
+ *     );
+ * }</pre>
  */
 public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObserver<RequestT> {
 
 
 
 	/**
-	 * Produces response messages to the given <code>requestMessage</code> and submits them to the
-	 * {@code singleRequestMessageResponseObserver} (associated with this {@code requestMessage}).
-	 * using {@link SingleRequestMessageResponseObserver#onNext(Object)} method.
-	 * Once all response messages to the given <code>requestMessage</code> are submitted, calls
-	 * {@link SingleRequestMessageResponseObserver#onCompleted()
-	 * singleRequestMessageResponseObserver.onComplete()}.
+	 * Produces response messages to the given {@code requestMessage}. Responses must be submitted
+	 * to {@code individualRequestMessageResponseObserver} that is associated with this
+	 * {@code requestMessage} using {@link CallStreamObserver#onNext(Object)
+	 * individualRequestMessageResponseObserver.onNext(response)}.
+	 * Once all responses to this {@code requestMessage} are submitted, this method must call
+	 * {@link IndividualRequestMessageResponseObserver#onCompleted()
+	 * individualRequestMessageResponseObserver.onComplete()}.
 	 * <p>
-	 * {@code singleRequestMessageResponseObserver} is thread-safe and implementations of this
+	 * {@code individualRequestMessageResponseObserver} is thread-safe and implementations of this
 	 * method may freely dispatch work to several other threads.</p>
 	 * <p>
 	 * To avoid excessive buffering, implementations should respect
-	 * {@code singleRequestMessageResponseObserver}'s readiness with
-	 * {@link CallStreamObserver#isReady() singleRequestMessageResponseObserver.isReady()} and
+	 * {@code individualRequestMessageResponseObserver}'s readiness with
+	 * {@link CallStreamObserver#isReady() individualRequestMessageResponseObserver.isReady()} and
 	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
-	 * singleRequestMessageResponseObserver.setOnReadyHandler(...)} methods.<br/>
+	 * individualRequestMessageResponseObserver.setOnReadyHandler(...)} methods.<br/>
 	 * Consider using {@link DispatchingOnReadyHandler} or
 	 * {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}.</p>
 	 * <p>
 	 * Default implementation calls {@link #requestHandler}.</p>
 	 *
-	 * @see SingleRequestMessageResponseObserver
+	 * @see IndividualRequestMessageResponseObserver
 	 */
 	protected void onRequestMessage(
 			RequestT requestMessage,
-			CallStreamObserver<ResponseT> singleRequestMessageResponseObserver) {
-		requestHandler.accept(requestMessage, singleRequestMessageResponseObserver);
+			CallStreamObserver<ResponseT> individualRequestMessageResponseObserver) {
+		requestHandler.accept(requestMessage, individualRequestMessageResponseObserver);
 	}
 
 	/**
-	 * Called by {@link #onRequestMessage(Object, CallStreamObserver)}. Supplied via the param of
+	 * Called by {@link #onRequestMessage(Object, CallStreamObserver)}. Initialized via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
 	 * constructor.
 	 */
@@ -88,7 +119,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	}
 
 	/**
-	 * Called by {@link #onError(Throwable)}. Supplied via the param of
+	 * Called by {@link #onError(Throwable)}. Initialized via the param of
 	 * {@link #ConcurrentRequestObserver(ServerCallStreamObserver, int, BiConsumer, Consumer)}
 	 * constructor.
 	 */
@@ -132,47 +163,42 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 	 *     {@code responseObserver.request(numberOfInitiallyRequestedMessages)}. If
 	 *     {@link #onRequestMessage(Object, CallStreamObserver)} dispatches work to other threads,
 	 *     rather than processing synchronously, this will be the maximum number of request messages
-	 *     processed concurrently. It should usually be equal or slightly bigger than the size of
-	 *     the threadPool the work is dispatched to, to account for the delivery delay of request
-	 *     messages from clients.
+	 *     processed concurrently. It should correspond to server's concurrent processing
+	 *     capabilities.
 	 */
 	protected ConcurrentRequestObserver(
 			ServerCallStreamObserver<ResponseT> responseObserver,
 			int numberOfInitiallyRequestedMessages) {
 		this.responseObserver = responseObserver;
 		responseObserver.disableAutoRequest();
-		responseObserver.request(numberOfInitiallyRequestedMessages);
-		responseObserver.setOnReadyHandler(this::onResponseObserverReady);
+		if (numberOfInitiallyRequestedMessages > 0) {
+			responseObserver.request(numberOfInitiallyRequestedMessages);
+		}
+		responseObserver.setOnReadyHandler(this::onReady);
 	}
 
 
 
-	ServerCallStreamObserver<ResponseT> responseObserver;
+	final ServerCallStreamObserver<ResponseT> responseObserver;
 
 	boolean halfClosed = false;
 	int idleCount = 0;
-	final Set<SingleRequestMessageResponseObserver> ongoingRequests = new HashSet<>();
+	final Set<IndividualRequestMessageResponseObserver> ongoingRequests =
+			ConcurrentHashMap.newKeySet();
 
 	protected final Object lock = new Object();
 
 
 
-	void onResponseObserverReady() {
-		List<SingleRequestMessageResponseObserver> ongoingRequestsCopy;
+	void onReady() {
 		synchronized (lock) {
-			// request 1 message for every thread that refrained from doing so when the buffer
-			// was too full
-			if (idleCount > 0 && ! halfClosed) {
+			if (idleCount > 0 && !halfClosed) {
 				responseObserver.request(idleCount);
 				idleCount = 0;
 			}
-
-			// copy ongoingRequests in case some of them get completed and try to remove themselves
-			// from the set while it is iterated through below (new requests will not come thanks to
-			// listener's lock)
-			ongoingRequestsCopy = new ArrayList<>(ongoingRequests);
 		}
-		for (var individualObserver: ongoingRequestsCopy) {
+		for (var individualObserver: ongoingRequests) {
+			// a new request can't arrive now thanks to Listener's concurrency contract
 			if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 		}
 	}
@@ -191,65 +217,59 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 	/**
 	 * Calls {@link #onRequestMessage(Object, CallStreamObserver) onRequest}({@code request},
-	 * {@link #newSingleRequestMessageResponseObserver()}).
+	 * {@link #newIndividualObserver()}).
 	 */
 	@Override
 	public final void onNext(RequestT request) {
-		final var individualObserver = newSingleRequestMessageResponseObserver();
+		final var individualObserver = newIndividualObserver();
 		onRequestMessage(request, individualObserver);
 		synchronized (lock) {
-			 if ( ! responseObserver.isReady()) return;
+			if ( !responseObserver.isReady()) return;
 		}
 		if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 	}
 
 	/**
-	 * Handles construction of new {@link SingleRequestMessageResponseObserver}s for subclasses to
-	 * override. Called by {@link #onNext(Object)}.
-	 *
-	 * @see OrderedConcurrentRequestObserver#newSingleRequestMessageResponseObserver()
+	 * Constructs new
+	 * {@link IndividualRequestMessageResponseObserver IndividualRequestMessageResponseObservers}
+	 * for {@link #onNext(Object)} method. Subclasses may override this method if they need to use
+	 * specialized subclasses of
+	 * {@link IndividualRequestMessageResponseObserver IndividualRequestMessageResponseObserver}.
+	 * @see OrderedConcurrentRequestObserver#newIndividualObserver()
 	 */
-	protected SingleRequestMessageResponseObserver newSingleRequestMessageResponseObserver() {
-		return new SingleRequestMessageResponseObserver();
+	protected IndividualRequestMessageResponseObserver newIndividualObserver() {
+		return new IndividualRequestMessageResponseObserver();
 	}
 
 
 
 	/**
-	 * Observer of responses to 1 particular request message. All methods are thread-safe.
-	 * <p>
-	 * To avoid excessive buffering, implementations of
-	 * {@link ConcurrentRequestObserver#onRequestMessage(Object, CallStreamObserver)} should respect
-	 * {@code singleRequestMessageResponseObserver}'s readiness with {@link #isReady()} and
-	 * {@link #setOnReadyHandler(Runnable)} methods.<br/>
-	 * Consider using {@link DispatchingOnReadyHandler} or
-	 * {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}.</p>
+	 * Observer of responses to 1 particular request message. All methods are thread-safe. A new
+	 * instance is created each time a new message arrives via {@link #onNext(Object)} and passed
+	 * to {@link #onRequestMessage(Object, CallStreamObserver)}.
 	 */
-	protected class SingleRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
+	protected class IndividualRequestMessageResponseObserver extends CallStreamObserver<ResponseT> {
 
 		volatile Runnable onReadyHandler;
 
 
 
-		SingleRequestMessageResponseObserver() {
-			synchronized (lock) {
-				ongoingRequests.add(this);
-			}
+		protected IndividualRequestMessageResponseObserver() {
+			ongoingRequests.add(this);
 		}
 
 
 
 		/**
 		 * Indicates that processing of the associated request message is completed. Once all
-		 * response observer of individual request messages are completed, {@code onComplete} from
-		 * the parent response observer (supplied via {@link
-		 * ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int)}
-		 * param) is called <b>automatically</b>.
+		 * individual observers are completed and client have half-closed,
+		 * {@link ConcurrentRequestObserver#onCompleted() onCompleted() from the parent response
+		 * observer} is called automatically.
 		 */
 		@Override
 		public void onCompleted() {
 			synchronized (lock) {
-				if ( ! ongoingRequests.remove(this)) {
+				if ( !ongoingRequests.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				if (halfClosed && ongoingRequests.isEmpty()) {
@@ -270,7 +290,7 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		@Override
 		public void onNext(ResponseT response) {
 			synchronized (lock) {
-				if ( ! ongoingRequests.contains(this)) {
+				if ( !ongoingRequests.contains(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				responseObserver.onNext(response);
@@ -280,17 +300,16 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 
 		/**
-		 * Calls {@code onError(Throwable)} from the parent response observer. (supplied via {@link
-		 * ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int)}
-		 * param).
+		 * Calls {@link ConcurrentRequestObserver#onError(Throwable) onError(error) from the
+		 * parent response observer}.
 		 */
 		@Override
-		public void onError(Throwable t) {
+		public void onError(Throwable error) {
 			synchronized (lock) {
-				if ( ! ongoingRequests.contains(this)) {
+				if ( !ongoingRequests.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
-				responseObserver.onError(t);
+				responseObserver.onError(error);
 			}
 		}
 
@@ -325,7 +344,8 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 		@Override public void request(int count) {}
 
 		/**
-		 * Has no effect: compression should be set using the parent response observer.
+		 * Has no effect: compression should be set using the parent
+		 * {@link ConcurrentRequestObserver}.
 		 */
 		@Override public void setMessageCompression(boolean enable) {}
 	}
@@ -333,5 +353,5 @@ public class ConcurrentRequestObserver<RequestT, ResponseT> implements StreamObs
 
 
 	static final String OBSERVER_FINALIZED_MESSAGE =
-			"onCompleted() has been already called for this request message";
+			"onCompleted() or onError() has been already called for this observer";
 }

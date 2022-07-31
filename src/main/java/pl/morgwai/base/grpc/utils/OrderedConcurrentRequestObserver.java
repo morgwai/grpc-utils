@@ -67,22 +67,25 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
 		});
 	}
 
+
+
 	final OrderedConcurrentOutputBuffer<ResponseT> buffer;
 
 
 
 	/**
-	 * Constructs a new {@link SingleRequestMessageResponseObserver} that instead of writing
+	 * Constructs a new {@link IndividualRequestMessageResponseObserver} that instead of writing
 	 * messages directly to the parent response observer, buffers them in its associated bucket.
 	 */
 	@Override
-	protected SingleRequestMessageResponseObserver newSingleRequestMessageResponseObserver() {
+	protected IndividualRequestMessageResponseObserver newIndividualObserver()
+	{
 		return new BucketResponseObserver(buffer.addBucket());
 	}
 
 
 
-	class BucketResponseObserver extends SingleRequestMessageResponseObserver {
+	class BucketResponseObserver extends IndividualRequestMessageResponseObserver {
 
 		final OutputStream<ResponseT> bucket;
 
