@@ -1,6 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
@@ -162,6 +163,28 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
+	 * Similar to
+	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, Function, Function)}
+	 * but uses {@link Iterator} API instead of 2 {@link Function}s.
+	 */
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		Function<Integer, Iterator<ResponseT>> messageProducer
+	) {
+		this(
+			streamObserver,
+			taskExecutor,
+			numberOfTasks,
+			(taskNumber) -> !messageProducer.apply(taskNumber).hasNext(),
+			(taskNumber) -> messageProducer.apply(taskNumber).next()
+		);
+	}
+
+
+
+	/**
 	 * Constructs a handler for "no-exception single-thread" case.
 	 * <p>
 	 * This is roughly equivalent to
@@ -181,6 +204,27 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			1,
 			(taskNumber) -> completionIndicator.get(),
 			(taskNumber) -> messageProducer.get()
+		);
+	}
+
+
+
+	/**
+	 * Similar to
+	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, Supplier, Supplier)} but uses
+	 * {@link Iterator} API instead of 2 {@link Supplier}s.
+	 */
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Iterator<ResponseT> messageProducer
+	) {
+		this(
+			streamObserver,
+			taskExecutor,
+			1,
+			(taskNumber) -> !messageProducer.hasNext(),
+			(taskNumber) -> messageProducer.next()
 		);
 	}
 
