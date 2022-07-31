@@ -309,66 +309,73 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
 				if (taskRunning[taskNumber]) continue;
 				taskRunning[taskNumber] = true;
-				final var taskNumberFinal = taskNumber;
-				taskExecutor.execute(new Runnable() {
-
-					@Override public void run() { handleSingleReadinessCycle(taskNumberFinal); }
-
-					@Override public String toString() {
-						return taskToStringHandler != null
-								? taskToStringHandler.apply(taskNumberFinal)
-								: "dispatchedOnReadyHandler-task-" + taskNumberFinal;
-					}
-				});
+				taskExecutor.execute(new SingleReadinessCycleHandlerTask(taskNumber));
 			}
 		}
 	}
 
 
 
-	void handleSingleReadinessCycle(int taskNumber) {
-		var ready = true;
-		try {
-			if ( !isCompleted(taskNumber)) {
-				synchronized (lock) {
-					ready = streamObserver.isReady();
-					if ( !ready) {
-						taskRunning[taskNumber] = false;
-						return;
-					}
-				}
-				do {
-					final var responseMessage = produceMessage(taskNumber);
-					final var completed = isCompleted(taskNumber);
+	class SingleReadinessCycleHandlerTask implements Runnable {
+
+		final int taskNumber;
+
+		SingleReadinessCycleHandlerTask(int taskNumber) { this.taskNumber = taskNumber; }
+
+
+
+		@Override public void run() {
+			var ready = true;
+			try {
+				if ( !isCompleted(taskNumber)) {
 					synchronized (lock) {
-						streamObserver.onNext(responseMessage);
-						if (completed) break;  // don't check isReady, call onCompleted immediately
 						ready = streamObserver.isReady();
 						if ( !ready) {
 							taskRunning[taskNumber] = false;
 							return;
 						}
 					}
-				} while (true);  // completed/unready cause break/return: no need for extra check
-			}
-			if (completionCount.incrementAndGet() == numberOfTasks) {
+					do {
+						final var responseMessage = produceMessage(taskNumber);
+						final var completed = isCompleted(taskNumber);
+						synchronized (lock) {
+							streamObserver.onNext(responseMessage);
+							if (completed) break; // no need to check isReady, break immediately
+							ready = streamObserver.isReady();
+							if ( !ready) {
+								taskRunning[taskNumber] = false;
+								return;
+							}
+						}
+					} while (true); // completed/unready cause break/return, no need for extra check
+				}
+				if (completionCount.incrementAndGet() == numberOfTasks) {
+					synchronized (lock) {
+						streamObserver.onCompleted();
+					}
+				}
+				// taskRunning[taskNumber] is left true to not respawn completed tasks
+			} catch (Throwable throwable) {
+				final var handlingResult = handleException(taskNumber, throwable);
+				if (handlingResult.isEmpty()) return;
+				final var toReport = handlingResult.get();
 				synchronized (lock) {
-					streamObserver.onCompleted();
+					if ( !errorReported) {
+						streamObserver.onError(toReport);
+						errorReported = true;
+					}
 				}
+			} finally {
+				if (ready) cleanup(taskNumber);  // only call on exception or completion
 			}
-			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
-		} catch (Throwable throwable) {
-			final var handlingResult = handleException(taskNumber, throwable);
-			if (handlingResult.isEmpty()) return;
-			final var toReport = handlingResult.get();
-			synchronized (lock) {
-				if ( !errorReported) {
-					streamObserver.onError(toReport);
-					errorReported = true;
-				}
-			}
-		} finally {
-			if (ready) cleanup(taskNumber);  // only call on exception or completion
+		}
+
+
+
+		@Override public String toString() {
+			return taskToStringHandler != null
+					? taskToStringHandler.apply(taskNumber)
+					: "onReadyHandler-task-" + taskNumber;
 		}
 	}
 }
