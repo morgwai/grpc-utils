@@ -75,6 +75,26 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		this.cleanupHandler = cleanupHandler;
 	}
 
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		ThrowingFunction<Integer, Boolean> completionIndicator,
+		ThrowingFunction<Integer, ResponseT> messageProducer,
+		BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler,
+		Consumer<Integer> cleanupHandler
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			numberOfTasks,
+			completionIndicator,
+			messageProducer,
+			exceptionHandler,
+			cleanupHandler
+		));
+	}
+
 
 
 	/**
@@ -106,6 +126,22 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		};
 	}
 
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		Function<Integer, Boolean> completionIndicator,
+		Function<Integer, ResponseT> messageProducer
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			numberOfTasks,
+			completionIndicator,
+			messageProducer
+		));
+	}
+
 
 
 	/**
@@ -126,6 +162,20 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			(taskNumber) -> !messageProducer.apply(taskNumber).hasNext(),
 			(taskNumber) -> messageProducer.apply(taskNumber).next()
 		);
+	}
+
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		Function<Integer, Iterator<ResponseT>> messageProducer
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			numberOfTasks,
+			messageProducer
+		));
 	}
 
 
@@ -150,6 +200,20 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 		);
 	}
 
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Supplier<Boolean> completionIndicator,
+		Supplier<ResponseT> messageProducer
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			completionIndicator,
+			messageProducer
+		));
+	}
+
 
 
 	/**
@@ -169,6 +233,18 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			(taskNumber) -> !messageProducer.hasNext(),
 			(taskNumber) -> messageProducer.next()
 		);
+	}
+
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Iterator<ResponseT> messageProducer
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			messageProducer
+		));
 	}
 
 
@@ -196,6 +272,24 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			(taskNumber, excp) -> exceptionHandler.apply(excp),
 			(taskNumber) -> cleanupHandler.run()
 		);
+	}
+
+	public static <ResponseT> void copyWithFlowControl(
+		CallStreamObserver<ResponseT> streamObserver,
+		Executor taskExecutor,
+		Callable<Boolean> completionIndicator,
+		Callable<ResponseT> messageProducer,
+		Function<Throwable, Optional<Throwable>> exceptionHandler,
+		Runnable cleanupHandler
+	) {
+		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			streamObserver,
+			taskExecutor,
+			completionIndicator,
+			messageProducer,
+			exceptionHandler,
+			cleanupHandler
+		));
 	}
 
 
