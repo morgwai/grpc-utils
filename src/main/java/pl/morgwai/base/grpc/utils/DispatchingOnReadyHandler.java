@@ -10,87 +10,36 @@ import java.util.function.*;
 
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.StreamObserver;
 
 
 
 /**
  * Streams messages to a {@link CallStreamObserver} from multiple threads with respect to
- * flow-control to ensure that no excessive buffering occurs.
- * <p>
- * Setting an instance using {@link CallStreamObserver#setOnReadyHandler(Runnable)
- * setOnReadyHandler(dispatchingOnReadyHandler)} will eventually have similar effects as the below
- * pseudo-code:</p>
- * <pre>
- * for (int i = 0; i &lt; numberOfTasks; i++) taskExecutor.execute(() -&gt; {
- *     try {
- *         while ( ! completionIndicator.apply(i))
- *             streamObserver.onNext(messageProducer.apply(i));
- *         if (allTasksCompleted()) streamObserver.onCompleted();
- *     } catch (Throwable t) {
- *         var toReport = handleException(taskNumber, throwable);
- *         if (toReport != null) streamObserver.onError(toReport);
- *     } finally {
- *         cleanupHandler.accept(i);
- *     }
- * });</pre>
- * <p>
- * However, calls to {@code streamObserver} are properly synchronized and the work is automatically
- * suspended/resumed whenever {@link #streamObserver} becomes unready/ready and executor's threads
- * are <b>released</b> during time when observer is unready.</p>
+ * flow-control to ensure that no excessive buffering occurs. This class has similar purpose to
+ * {@link io.grpc.stub.StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)}, but work
+ * is dispatched to the supplied executor and parallelized according to the supplied param.
  * <p>
  * Typical usage:</p>
  * <pre>
  * public void myServerStreamingMethod(
  *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *     var state = new MyCallState(request, NUMBER_OF_TASKS);
- *     var responseObserver =
+ *     final var processor = new MyRequestProcessor(request, NUMBER_OF_TASKS);
+ *     final var responseObserver =
  *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
  *     responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
- *     final var handler = new DispatchingServerStreamingCallHandler&lt;&gt;(
+ *     responseObserver.setOnReadyHandler(new DispatchingOnReadyHandler&lt;&gt;(
  *         responseObserver,
  *         taskExecutor,
  *         NUMBER_OF_TASKS,
- *         (i) -&gt; state.isCompleted(i),
- *         (i) -&gt; state.produceNextResponseMessage(i),
- *         (i, error) -&gt; {
- *             state.fail(error);  // interrupt other tasks
- *             if (error instanceof StatusRuntimeException) return null;
- *             return Status.INTERNAL.asException();
+ *         (taskNumber) -&gt; processor.isCompleted(taskNumber),
+ *         (taskNumber) -&gt; processor.produceNextResponseMessage(taskNumber),
+ *         (taskNumber, error) -&gt; {
+ *             processor.fail(error);  // interrupt other tasks
+ *             if (error instanceof StatusRuntimeException) return Optional.empty();
+ *             return Optional.of(Status.INTERNAL.asException());
  *         },
- *         (i) -&gt; state.cleanup(i)
- *     );
- *     responseObserver.setOnReadyHandler(handler);
- * }</pre>
- * <p>
- * <b>NOTE:</b> this class is not suitable for cases where executor's thread should not be released,
- * such as JDBC/JPA processing where executor threads correspond to pooled connections that must be
- * retained in order not to lose given DB transaction/cursor. In such cases processing should be
- * implemented similar as the below code:</p>
- * <pre>
- * public void myServerStreamingMethod(
- *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
- *     responseObserver.setOnReadyHandler(() -&gt; {
- *         synchronized (responseObserver) {
- *             responseObserver.notify();
- *         }
- *     });
- *     jdbcExecutor.execute(() -&gt; {
- *         try {
- *             var state = new MyCallState(request);
- *             while ( ! state.isCompleted()) {
- *                 synchronized (responseObserver) {
- *                     while ( ! responseObserver.isReady()) responseObserver.wait();
- *                 }
- *                 responseObserver.onNext(state.produceNextResponseMessage());
- *             }
- *             responseObserver.onCompleted();
- *         } catch (Throwable t) {
- *             if ( ! (t instanceof StatusRuntimeException)) responseObserver.onError(t);
- *         } finally {
- *             state.cleanup();
- *         }
- *     });
+ *         (taskNumber) -&gt; processor.cleanup(i)
+ *     ));
  * }</pre>
  */
 public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
@@ -105,12 +54,10 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
-	 * Constructs a "full-version" handler that includes handling exception thrown by
-	 * {@link #completionIndicator} and {@link #messageProducer}.
-	 * <p>
-	 * If and only if {@link #exceptionHandler} returns non-null and
-	 * {@link StreamObserver#onError(Throwable)} hasn't been called yet, then it will be called with
-	 * obtained value as its argument.</p>
+	 * Constructs a multi-threaded handler that includes exception handling.
+	 * If {@code exceptionHandler} applied to an exception thrown by {@code completionIndicator} or
+	 * {@code messageProducer} returns non-empty result, then it will be passed on to
+	 * {@code streamObserver.onError(...)}.
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -131,12 +78,11 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
-	 * Constructs a handler for "no-exception" case.
+	 * Constructs a multi-threaded handler for "no-exception" case.
 	 * <p>
-	 * If {@link Error} or {@link RuntimeException} occurs, it is reported via
-	 * {@link StreamObserver#onError(Throwable)} (except for {@link StatusRuntimeException} and
-	 * unless some error has been already reported) and re-thrown (including
-	 * {@link StatusRuntimeException}).</p>
+	 * If {@link Error} or {@link RuntimeException} occurs, it will be passed on to
+	 * {@code streamObserver.onError(...)} (except for {@link StatusRuntimeException}) and re-thrown
+	 * (including {@link StatusRuntimeException}).</p>
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -185,12 +131,9 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
-	 * Constructs a handler for "no-exception single-thread" case.
-	 * <p>
-	 * This is roughly equivalent to
-	 * {@link io.grpc.stub.StreamObservers
-	 * #copyWithFlowControl(java.util.Iterator, CallStreamObserver)}, except that it will run on
-	 * different executor and for {@link Error}/{@link RuntimeException} reporting.</p>
+	 * Constructs a single-threaded handler for "no-exception" case.
+	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, Function,
+	 * Function) multi-threaded version for details about exception handling
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -231,12 +174,10 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 	/**
-	 * Constructs a handler for "single-thread" case that includes handling exception thrown by
-	 * {@link #completionIndicator} and {@link #messageProducer}.
-	 * @see DispatchingOnReadyHandler
-	 * #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
-	 * ThrowingFunction, BiFunction, Consumer) multi-task constructor for details about exception
-	 * handling
+	 * Constructs a single-thread handler that includes exception handling.
+	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
+	 * ThrowingFunction, BiFunction, Consumer) multi-threaded version for details about
+	 * exception handling
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResponseT> streamObserver,
@@ -368,15 +309,15 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
 				if (taskRunning[taskNumber]) continue;
 				taskRunning[taskNumber] = true;
-				final var taskNumberWrapper = Integer.valueOf(taskNumber);
+				final var taskNumberFinal = taskNumber;
 				taskExecutor.execute(new Runnable() {
 
-					@Override public void run() { handleSingleReadinessCycle(taskNumberWrapper); }
+					@Override public void run() { handleSingleReadinessCycle(taskNumberFinal); }
 
 					@Override public String toString() {
 						return taskToStringHandler != null
-								? taskToStringHandler.apply(taskNumberWrapper)
-								: "dispatchedOnReadyHandler-task-" + taskNumberWrapper;
+								? taskToStringHandler.apply(taskNumberFinal)
+								: "dispatchedOnReadyHandler-task-" + taskNumberFinal;
 					}
 				});
 			}
@@ -385,25 +326,25 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 
 
 
-	void handleSingleReadinessCycle(Integer taskNumber) {
+	void handleSingleReadinessCycle(int taskNumber) {
 		var ready = true;
 		try {
-			if ( ! isCompleted(taskNumber)) {
+			if ( !isCompleted(taskNumber)) {
 				synchronized (lock) {
 					ready = streamObserver.isReady();
-					if ( ! ready) {
+					if ( !ready) {
 						taskRunning[taskNumber] = false;
 						return;
 					}
 				}
 				do {
 					final var responseMessage = produceMessage(taskNumber);
-					var completed = isCompleted(taskNumber);
+					final var completed = isCompleted(taskNumber);
 					synchronized (lock) {
 						streamObserver.onNext(responseMessage);
 						if (completed) break;  // don't check isReady, call onCompleted immediately
 						ready = streamObserver.isReady();
-						if ( ! ready) {
+						if ( !ready) {
 							taskRunning[taskNumber] = false;
 							return;
 						}
@@ -417,11 +358,11 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 			}
 			// taskRunning[taskNumber] is left true to not re-spawn completed tasks unnecessarily
 		} catch (Throwable throwable) {
-			var handlingResult = handleException(taskNumber, throwable);
+			final var handlingResult = handleException(taskNumber, throwable);
 			if (handlingResult.isEmpty()) return;
-			var toReport = handlingResult.get();
+			final var toReport = handlingResult.get();
 			synchronized (lock) {
-				if ( ! errorReported) {
+				if ( !errorReported) {
 					streamObserver.onError(toReport);
 					errorReported = true;
 				}
