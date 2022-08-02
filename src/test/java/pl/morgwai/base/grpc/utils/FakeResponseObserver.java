@@ -344,6 +344,12 @@ public class FakeResponseObserver<ResponseT>
 	<RequestT> void startRequestDelivery(
 			StreamObserver<RequestT> requestObserver,
 			Consumer<StreamObserver<RequestT>> requestProducer) {
+		if (onReadyHandler != null) {
+			synchronized (listenerLock) {
+				log.fine("delivering initial onReady() callback");
+				if (onReadyHandler != null) onReadyHandler.run();
+			}
+		}
 		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) requestProducer;
 		this.requestObserver = new StreamObserver<RequestT>() {
 

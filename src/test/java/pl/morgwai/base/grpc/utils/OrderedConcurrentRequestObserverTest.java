@@ -11,12 +11,13 @@ import io.grpc.stub.CallStreamObserver;
 
 
 
+// TODO: split into Request- and Response- ObserverTest
 public class OrderedConcurrentRequestObserverTest extends ConcurrentRequestObserverTest {
 
 
 
 	@Override
-	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
+	protected ConcurrentInboundObserver<RequestMessage, ResponseMessage>
 			newConcurrentRequestObserver(
 					int numberOfConcurrentRequests,
 					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler,

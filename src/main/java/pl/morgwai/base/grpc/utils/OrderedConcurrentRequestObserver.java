@@ -6,108 +6,65 @@ import java.util.function.Consumer;
 
 import io.grpc.stub.*;
 
-import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer;
-import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
-
 
 
 /**
- * A {@link ConcurrentRequestObserver} that uses {@link OrderedConcurrentOutputBuffer} to
- * automatically ensure that response messages are sent in order corresponding to request messages
- * order.
- * <p>
- * Note: as only responses to "head" requests are sent directly to clients and rest is buffered,
- * the number of requests processed concurrently should not be set too big to avoid excessive buffer
- * growth.</p>
+ * TODO
  */
-public class OrderedConcurrentRequestObserver<RequestT, ResponseT>
-		extends ConcurrentRequestObserver<RequestT, ResponseT>
-		implements StreamObserver<RequestT> {
+public class OrderedConcurrentRequestObserver<RequestT, ResponseT, OutboundT>
+		extends OrderedConcurrentInboundObserver<RequestT, OutboundT> {
 
 
 
 	/**
-	 * See {@link ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int,
-	 * BiConsumer, Consumer) super}.
+	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(ServerCallStreamObserver, int,
+	 * BiConsumer, Consumer) super constructor for param description}.
 	 */
 	public OrderedConcurrentRequestObserver(
-		ServerCallStreamObserver<ResponseT> responseObserver,
-		int numberOfConcurrentRequests,
-		BiConsumer<RequestT, CallStreamObserver<ResponseT>> requestHandler,
+		ServerCallStreamObserver<ResponseT> responseObserver,  // inbound control
+		ClientCallStreamObserver<OutboundT> nestedCallRequestObserver,  // outbound
+		int numberOfInitialMessages,
+		BiConsumer<RequestT, CallStreamObserver<OutboundT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
-		this(responseObserver, numberOfConcurrentRequests);
-		this.requestHandler = requestHandler;
-		this.errorHandler = errorHandler;
+		super(nestedCallRequestObserver, numberOfInitialMessages, requestHandler, errorHandler);
+		setInboundControlObserver(responseObserver);
 	}
 
 
 
 	/**
 	 * See {@link
-	 * ConcurrentRequestObserver#ConcurrentRequestObserver(ServerCallStreamObserver, int) super}.
+	 * ConcurrentInboundObserver#ConcurrentInboundObserver(ServerCallStreamObserver, int) super}.
 	 */
 	protected OrderedConcurrentRequestObserver(
-			ServerCallStreamObserver<ResponseT> responseObserver,
-			int numberOfConcurrentRequests) {
-		super(responseObserver, numberOfConcurrentRequests);
-		buffer = new OrderedConcurrentOutputBuffer<>(new OutputStream<>() {
-
-			@Override public void write(ResponseT message) {
-				// other bucket threads may be calling isReady(), onError() etc
-				synchronized (lock) {
-					responseObserver.onNext(message);
-				}
-			}
-
-			@Override public void close() {
-				// {@link ConcurrentRequestObserver} tracks individual requests and takes care of
-				// calling {@code responseObserver.onCompleted()}.
-			}
-		});
+		ServerCallStreamObserver<ResponseT> responseObserver,  // inbound control
+		ClientCallStreamObserver<OutboundT> nestedCallRequestObserver,  // outbound
+		int numberOfInitialMessages
+	) {
+		super(nestedCallRequestObserver, numberOfInitialMessages);
+		setInboundControlObserver(responseObserver);
 	}
 
 
 
-	final OrderedConcurrentOutputBuffer<ResponseT> buffer;
-
-
-
-	/**
-	 * Constructs a new {@link IndividualRequestMessageResponseObserver} that instead of writing
-	 * messages directly to the parent response observer, buffers them in its associated bucket.
-	 */
-	@Override
-	protected IndividualRequestMessageResponseObserver newIndividualObserver()
-	{
-		return new BucketResponseObserver(buffer.addBucket());
+	public OrderedConcurrentRequestObserver(
+		ServerCallStreamObserver<OutboundT> responseObserver,  // outbound + inbound control
+		int numberOfInitialMessages,
+		BiConsumer<RequestT, CallStreamObserver<OutboundT>> requestHandler,
+		Consumer<Throwable> errorHandler
+	) {
+		super(responseObserver, numberOfInitialMessages, requestHandler, errorHandler);
+		setInboundControlObserver(responseObserver);
 	}
 
 
 
-	class BucketResponseObserver extends IndividualRequestMessageResponseObserver {
-
-		final OutputStream<ResponseT> bucket;
-
-
-
-		BucketResponseObserver(OutputStream<ResponseT> bucket) {
-			this.bucket = bucket;
-		}
-
-
-
-		@Override
-		public void onCompleted() {
-			bucket.close();
-			super.onCompleted();
-		}
-
-
-
-		@Override
-		public void onNext(ResponseT response) {
-			bucket.write(response);
-		}
+	protected OrderedConcurrentRequestObserver(
+		ServerCallStreamObserver<OutboundT> responseObserver,  // outbound + inbound control
+		int numberOfInitialMessages
+	) {
+		super(responseObserver, numberOfInitialMessages);
+		setInboundControlObserver(responseObserver);
 	}
 }

@@ -19,6 +19,7 @@ import static org.junit.Assert.*;
 
 
 
+// TODO: split into Request- and Response- ObserverTest
 public class ConcurrentRequestObserverTest {
 
 
@@ -99,7 +100,7 @@ public class ConcurrentRequestObserverTest {
 	 * ConcurrentRequestObserver can reuse this test class.
 	 * @see OrderedConcurrentRequestObserverTest
 	 */
-	protected ConcurrentRequestObserver<RequestMessage, ResponseMessage>
+	protected ConcurrentInboundObserver<RequestMessage, ResponseMessage>
 			newConcurrentRequestObserver(
 					int numberOfConcurrentRequests,
 					BiConsumer<RequestMessage, CallStreamObserver<ResponseMessage>> requestHandler,
@@ -291,6 +292,7 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+				if (getRemainingMillis(startMillis) <= 1l) break;
 			}
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
@@ -331,6 +333,7 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+				if (getRemainingMillis(startMillis) <= 1l) break;
 			}
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
@@ -371,6 +374,7 @@ public class ConcurrentRequestObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
+				if (getRemainingMillis(startMillis) <= 1l) break;
 			}
 		}
 		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
