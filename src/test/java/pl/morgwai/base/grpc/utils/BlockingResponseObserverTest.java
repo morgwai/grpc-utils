@@ -125,22 +125,6 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 
 	@Test
-	public void testCancelOnException() throws Exception {
-		final var exception = new RuntimeException("expected");
-		responseObserver = new BlockingResponseObserver<>((msg) -> { throw exception; });
-		requestObserver.cancel(null, exception);
-		replayAll();
-
-		responseObserver.beforeStart(requestObserver);
-		responseObserver.onNext(new ResponseMessage(7));
-		responseObserver.awaitCompletion(10l);
-
-		verifyAll();
-	}
-
-
-
-	@Test
 	public void testBeforeStart() {
 		final var requestObserverHolder = new Object[1];
 		responseObserver = new BlockingResponseObserver<>(

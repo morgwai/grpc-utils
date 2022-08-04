@@ -35,32 +35,40 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Returns {@code true} if either {@link #onCompleted()} or {@link #onError(Throwable)} was
-	 * called.
+	 * Default implementation calls {@link #responseHandler}.
 	 */
-	public boolean isCompleted() { return completed; }
-	volatile boolean completed = false;
+	@Override
+	public void onNext(ResponseT response) {
+		responseHandler.accept(response);
+	}
 
 	/**
-	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
+	 * Called by {@link #onNext(Object)}. Initialized via the constructor param.
 	 */
-	public Throwable getError() { return error; }
-	volatile Throwable error;
+	protected Consumer<ResponseT> responseHandler;
+
+
 
 	/**
 	 * Returns {@link ClientCallStreamObserver requestObserver} passed to
 	 * {@link #beforeStart(ClientCallStreamObserver)}.
 	 */
 	public ClientCallStreamObserver<RequestT> getRequestObserver() { return requestObserver; }
-	ClientCallStreamObserver<RequestT> requestObserver;
+	protected ClientCallStreamObserver<RequestT> requestObserver;
 
 	/**
-	 * Called by {@link #onNext(Object)}.
+	 * Default implementation stores {@code requestObserver} (so that it can be later retrieved with
+	 * {@link #getRequestObserver()}) and calls {@link #startHandler}.
 	 */
-	protected Consumer<ResponseT> responseHandler;
+	@Override
+	public void beforeStart(final ClientCallStreamObserver<RequestT> requestObserver) {
+		this.requestObserver = requestObserver;
+		if (startHandler != null) startHandler.accept(requestObserver);
+	}
 
 	/**
 	 * Called by {@link #beforeStart(ClientCallStreamObserver)}.
+	 * Initialized via the constructor param.
 	 */
 	protected Consumer<ClientCallStreamObserver<RequestT>> startHandler;
 
@@ -83,36 +91,6 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		this.startHandler = startHandler;
 	}
 
-
-
-	/**
-	 * Stores {@code requestObserver} (so that it can be later retrieved with
-	 * {@link #getRequestObserver()}) and calls {@link #startHandler}.
-	 */
-	@Override
-	public final void beforeStart(final ClientCallStreamObserver<RequestT> requestObserver) {
-		this.requestObserver = requestObserver;
-		if (startHandler != null) startHandler.accept(requestObserver);
-	}
-
-
-
-	/**
-	 * Calls {@link #responseHandler}. If the handler throws anything, the call will be
-	 * {@link ClientCallStreamObserver#cancel(String, Throwable) cancelled}.
-	 */
-	@Override
-	public void onNext(ResponseT response) {
-		try {
-			responseHandler.accept(response);
-		} catch (Throwable t) {
-			requestObserver.cancel(null, t);
-			if (t instanceof Error) throw (Error) t;
-		}
-	}
-
-
-
 	/**
 	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
 	 * of providing a lambda.
@@ -120,6 +98,19 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	protected BlockingResponseObserver() {}
 
 
+
+	/**
+	 * Returns {@code true} if either {@link #onCompleted()} or {@link #onError(Throwable)} was
+	 * called.
+	 */
+	public boolean isCompleted() { return completed; }
+	volatile boolean completed = false;
+
+	/**
+	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
+	 */
+	public Throwable getError() { return error; }
+	volatile Throwable error;
 
 	final CountDownLatch latch = new CountDownLatch(1);
 
@@ -135,7 +126,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	 */
 	public boolean awaitCompletion(long timeout, TimeUnit unit)
 			throws ErrorReportedException, InterruptedException {
-		if (timeout == 0l) {
+		if (timeout == 0L) {
 			latch.await();
 		} else {
 			latch.await(timeout, unit);
@@ -191,6 +182,6 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	 */
 	public static class ErrorReportedException extends Exception {
 		ErrorReportedException(Throwable reportedError) { super(reportedError); }
-		private static final long serialVersionUID = 4822900070324973236L;
+		private static final long serialVersionUID = 1848619649489806621L;
 	}
 }
