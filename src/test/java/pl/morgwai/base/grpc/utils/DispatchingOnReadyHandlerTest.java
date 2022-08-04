@@ -8,10 +8,10 @@ import java.util.logging.Logger;
 
 import org.junit.*;
 
-import pl.morgwai.base.grpc.utils.FakeResponseObserver.LoggingExecutor;
+import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 
 import static org.junit.Assert.*;
-import static pl.morgwai.base.grpc.utils.ConcurrentRequestObserverTest.*;
+import static pl.morgwai.base.grpc.utils.ConcurrentInboundObserverTest.*;
 
 
 
@@ -21,7 +21,7 @@ public class DispatchingOnReadyHandlerTest {
 
 	DispatchingOnReadyHandler<Integer> handler;
 
-	FakeResponseObserver<Integer> responseObserver;
+	FakeOutboundObserver<Integer, ?> responseObserver;
 
 	/**
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
@@ -48,7 +48,7 @@ public class DispatchingOnReadyHandlerTest {
 		caughtError = null;
 		cleanupCount = 0;
 		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 5);
-		responseObserver = new FakeResponseObserver<>(grpcInternalExecutor);
+		responseObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
 		userExecutor = new LoggingExecutor("userExecutor", 5);
 	}
 
@@ -274,7 +274,7 @@ public class DispatchingOnReadyHandlerTest {
 					DispatchingOnReadyHandlerTest.class.getPackageName() + ".level"));
 		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
-		FakeResponseObserver.getLogger().setLevel(LOG_LEVEL);
+		FakeOutboundObserver.getLogger().setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}
 }
