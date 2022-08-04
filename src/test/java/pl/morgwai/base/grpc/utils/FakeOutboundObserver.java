@@ -19,6 +19,7 @@ import io.grpc.stub.*;
 
 
 /**
+ * todo: update
  * A fake {@link CallStreamObserver} testing helper class.
  * Helps to emulate behavior of an inbound and the gRPC system.
  * <p>
@@ -211,24 +212,9 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
-	/**
-	 * Count of calls to {@link #onCompleted()} and {@link #onError(Throwable)}.
-	 * Should be 1 at the end of positive test methods.
-	 */
-	public int getFinalizedCount() {
-		synchronized (finalizationGuard) {
-			return finalizedCount;
-		}
-	}
-	int finalizedCount = 0;
-
-	/**
-	 * Should an IllegalStateException be thrown immediately upon second finalization.
-	 * By default <code>true</code>.
-	 */
-	public boolean failOnMultipleFinalizations = true;
-
-	final Object finalizationGuard = new Object();
+	public boolean isFinalized() { return finalized; }
+	boolean finalized = false;
+	final CountDownLatch finalizationGuard = new CountDownLatch(1);
 
 
 
@@ -240,13 +226,11 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		try {
 			log.fine("response completed");
 			synchronized (finalizationGuard) {
-				finalizedCount++;
-				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new IllegalStateException("multiple finalizations");
-				}
-				finalizationGuard.notify();
+				if (finalized) throw new IllegalStateException("multiple finalizations");
+				finalized = true;
 			}
 		} finally {
+			finalizationGuard.countDown();
 			concurrencyGuard.unlock();
 		}
 	}
@@ -255,22 +239,8 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void onError(Throwable t) {
-		if ( ! concurrencyGuard.tryLock("onError")) {
-			throw new AssertionError("concurrency violation");
-		}
-		try {
-			if (log.isLoggable(Level.FINE)) log.fine("error reported: " + t);
-			synchronized (finalizationGuard) {
-				finalizedCount++;
-				if (finalizedCount > 1 && failOnMultipleFinalizations) {
-					throw new IllegalStateException("multiple finalizations");
-				}
-				reportedError = t;
-				finalizationGuard.notify();
-			}
-		} finally {
-			concurrencyGuard.unlock();
-		}
+		reportedError = t;
+		onCompleted();
 	}
 
 	/**
@@ -293,21 +263,16 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	/**
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
-	 * {@link #onError(Throwable)}) occurs or {@code timeoutMillis} passes.
+	 * {@link #onError(Throwable)} or {@link #simulateCancel()} ) occurs or {@code timeoutMillis}
+	 * passes.
 	 * @throws RuntimeException if {@code timeoutMillis} is exceeded.
 	 */
 	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-		final var startMillis = System.currentTimeMillis();
-		var currentMillis = startMillis;
+		finalizationGuard.await(timeoutMillis, TimeUnit.MILLISECONDS);
 		synchronized (finalizationGuard) {
-			while (finalizedCount == 0 && reportedError == null
-					&& currentMillis - startMillis < timeoutMillis) {
-				finalizationGuard.wait(timeoutMillis + startMillis - currentMillis);
-				currentMillis = System.currentTimeMillis();
+			if (!finalized && reportedError == null) {
+				throw new RuntimeException("timeout awaiting for finalization");
 			}
-		}
-		if (finalizedCount == 0 && reportedError == null) {
-			throw new RuntimeException("timeout awaiting for finalization");
 		}
 	}
 
@@ -336,8 +301,9 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 	/**
-	 * Sets up delivery of request messages from {@code inboundMessageProducer} to {@code inboundObserver}
-	 * (test subject) whenever {@link #request(int)} method is called.<br/>
+	 * todo: update
+	 * Sets up delivery of request messages from {@code inboundMessageProducer} to
+	 * {@code inboundObserver} (test subject) whenever {@link #request(int)} method is called.<br/>
 	 * Also delivers messages for all accumulated {@link #request(int)} calls that happened before
 	 * this method was called.
 	 * <p>
@@ -411,7 +377,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 				requestProducer.accept(requestObserver);
 				if (autoRequest) {
 					synchronized (finalizationGuard) {
-						if (finalizedCount == 0) requestOne();
+						if ( !finalized) requestOne();
 					}
 				}
 			}

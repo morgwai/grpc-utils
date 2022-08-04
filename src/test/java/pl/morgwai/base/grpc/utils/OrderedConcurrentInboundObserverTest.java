@@ -12,15 +12,6 @@ public abstract class OrderedConcurrentInboundObserverTest extends ConcurrentInb
 
 
 	@Override
-	public void testOnErrorMultipleThreads() throws InterruptedException {
-		super.testOnErrorMultipleThreads();
-		assertTrue("messages should be written in order",
-				Comparators.isInOrder(outboundObserver.getOutputData(), outboundMessageComparator));
-	}
-
-
-
-	@Override
 	public void testAsyncProcessingOf100MessagesIn5Threads() throws InterruptedException {
 		super.testAsyncProcessingOf100MessagesIn5Threads();
 		assertTrue("messages should be written in order",

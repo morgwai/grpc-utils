@@ -131,8 +131,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, outboundObserver.getOutputData().size());
-		assertEquals("outbound stream should be marked completed 1 time",
-				1, outboundObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				outboundObserver.getOutputData(), outboundMessageComparator));
 		verifyExecutor(grpcInternalExecutor);
@@ -164,8 +163,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, outboundObserver.getOutputData().size());
-		assertEquals("outbound stream should be marked completed 1 time",
-				1, outboundObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				outboundObserver.getOutputData(), outboundMessageComparator));
 		verifyExecutor(grpcInternalExecutor);
@@ -197,60 +195,8 @@ public abstract class ConcurrentInboundObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertSame("supplied error should be reported", error, outboundObserver.getReportedError());
-		assertEquals("onError() should be called 1 time", 1, outboundObserver.getFinalizedCount());
+		assertTrue("onError() should be called", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
-	}
-
-
-
-	@Test
-	public void testOnErrorMultipleThreads() throws InterruptedException {
-		final var maxConcurrentMessages = 4;
-		final var numberOfSeriesToPass = 10;
-		final var numberOfMessages = (numberOfSeriesToPass + 2) * maxConcurrentMessages;
-		final var error = new Exception();
-		final var userExecutor = new LoggingExecutor("userExecutor", maxConcurrentMessages);
-		final var testSubject = newConcurrentInboundObserver(
-			maxConcurrentMessages,
-			(inboundMessage, individualObserver) -> userExecutor.execute(() -> {
-				final var requestId = inboundMessage.id;
-				if (requestId <= numberOfSeriesToPass * maxConcurrentMessages) {
-					try {
-						Thread.sleep(3l);  // processing delay
-					} catch (InterruptedException ignored) {}
-					individualObserver.onNext(new OutboundMessage(requestId));
-					individualObserver.onCompleted();
-				} else if (requestId > (numberOfSeriesToPass + 1) * maxConcurrentMessages) {
-					outboundObserver.onError(
-							new Exception("no messages should be requested after an error"));
-				} else {
-					try {
-						individualObserver.onError(error);
-					} catch (IllegalStateException ignored) {}  // subsequent calls will throw
-				}
-			}),
-			newErrorHandler(Thread.currentThread())
-		);
-
-		final var startMillis = System.currentTimeMillis();
-		outboundObserver.startMessageDelivery(
-				testSubject, new InboundMessageProducer(numberOfMessages));
-		while (outboundObserver.getFinalizedCount() < maxConcurrentMessages) {
-			outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		}
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
-
-		assertEquals("correct number of messages should be written",
-				numberOfSeriesToPass * maxConcurrentMessages,
-				outboundObserver.getOutputData().size());
-		assertSame("supplied error should be reported", error, outboundObserver.getReportedError());
-		assertEquals("onError() should be called maxConcurrentMessages times",
-				maxConcurrentMessages, outboundObserver.getFinalizedCount());
-		verifyExecutor(grpcInternalExecutor);
-		verifyExecutor(userExecutor);
 	}
 
 
@@ -450,8 +396,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * resultsPerMessage, outboundObserver.getOutputData().size());
-		assertEquals("outbound stream should be marked completed 1 time",
-				1, outboundObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}
@@ -515,8 +460,7 @@ public abstract class ConcurrentInboundObserverTest {
 				1, handlerCallCounters[0]);
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * resultsPerMessage, outboundObserver.getOutputData().size());
-		assertEquals("outbound stream should be marked completed 1 time",
-				1, outboundObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}
@@ -595,8 +539,7 @@ public abstract class ConcurrentInboundObserverTest {
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * tasksPerMessage * resultsPerTask,
 				outboundObserver.getOutputData().size());
-		assertEquals("outbound stream should be marked completed 1 time",
-				1, outboundObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}

@@ -86,8 +86,7 @@ public class DispatchingOnReadyHandlerTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfResponses, responseObserver.getOutputData().size());
-		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
 		assertNull("no exception should be thrown", caughtError);
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		verifyExecutor(grpcInternalExecutor);
@@ -133,8 +132,7 @@ public class DispatchingOnReadyHandlerTest {
 		assertEquals("correct number of messages should be written",
 				responsesPerTasks * numberOfTasks,
 				responseObserver.getOutputData().size());
-		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
 		assertNull("no exception should be thrown", caughtError);
 		for (int i = 0; i < numberOfTasks; i++) {
 			assertEquals("cleanupHandler should be called 1 time for each thread (" + i + ')',
@@ -195,8 +193,7 @@ public class DispatchingOnReadyHandlerTest {
 		assertNull("no exception should be thrown", caughtError);
 		assertEquals("correct number of messages should be written",
 				numberOfResponses, responseObserver.getOutputData().size());
-		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
@@ -247,8 +244,7 @@ public class DispatchingOnReadyHandlerTest {
 				thrownException, responseObserver.reportedError);
 		assertEquals("2 messages should be written",
 				2, responseObserver.getOutputData().size());
-		assertEquals("response should be marked completed 1 time",
-				1, responseObserver.getFinalizedCount());
+		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
 		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
