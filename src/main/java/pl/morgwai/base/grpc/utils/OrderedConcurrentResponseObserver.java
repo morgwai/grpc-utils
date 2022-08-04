@@ -53,7 +53,7 @@ public class OrderedConcurrentResponseObserver<RequestT, ResponseT, OutboundT>
 	public OrderedConcurrentResponseObserver(
 		ClientCallStreamObserver<OutboundT> chainedCallRequestObserver,
 		int numberOfInitiallyRequestedMessages,
-		BiConsumer<ResponseT, CallStreamObserver<OutboundT>> responseHandler,
+		BiConsumer<ResponseT, ClientCallStreamObserver<OutboundT>> responseHandler,
 		Consumer<Throwable> errorHandler,
 		Consumer<ClientCallStreamObserver<RequestT>> preStartHandler
 	) {

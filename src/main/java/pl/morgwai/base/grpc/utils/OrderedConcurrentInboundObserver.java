@@ -38,7 +38,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT>
 		Consumer<Throwable> errorHandler
 	) {
 		this(responseObserver, numberOfConcurrentRequests);
-		this.inboundMessageHandler = requestHandler;
+		this.inboundMessageHandler = requestHandler::accept;
 		this.errorHandler = errorHandler;
 	}
 
@@ -49,7 +49,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT>
 	public OrderedConcurrentInboundObserver(
 		ClientCallStreamObserver<OutboundT> responseObserver,
 		int numberOfConcurrentRequests,
-		BiConsumer<InboundT, CallStreamObserver<OutboundT>> requestHandler,
+		BiConsumer<InboundT, ClientCallStreamObserver<OutboundT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
 		this(responseObserver, numberOfConcurrentRequests);
@@ -62,8 +62,9 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT>
 	 * ConcurrentInboundObserver#ConcurrentInboundObserver(ServerCallStreamObserver, int) super}.
 	 */
 	protected OrderedConcurrentInboundObserver(
-			ServerCallStreamObserver<OutboundT> responseObserver,
-			int numberOfConcurrentRequests) {
+		ServerCallStreamObserver<OutboundT> responseObserver,
+		int numberOfConcurrentRequests
+	) {
 		super(responseObserver, numberOfConcurrentRequests);
 		buffer = createBuffer(responseObserver);
 	}
@@ -74,7 +75,8 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT>
 	 */
 	protected OrderedConcurrentInboundObserver(
 		ClientCallStreamObserver<OutboundT> responseObserver,
-		int numberOfConcurrentRequests) {
+		int numberOfConcurrentRequests
+	) {
 		super(responseObserver, numberOfConcurrentRequests);
 		buffer = createBuffer(responseObserver);
 	}

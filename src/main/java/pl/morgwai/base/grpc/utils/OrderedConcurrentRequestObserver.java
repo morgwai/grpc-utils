@@ -24,7 +24,7 @@ public class OrderedConcurrentRequestObserver<RequestT, ResponseT, OutboundT>
 		ServerCallStreamObserver<ResponseT> responseObserver,  // inbound control
 		ClientCallStreamObserver<OutboundT> nestedCallRequestObserver,  // outbound
 		int numberOfInitialMessages,
-		BiConsumer<RequestT, CallStreamObserver<OutboundT>> requestHandler,
+		BiConsumer<RequestT, ClientCallStreamObserver<OutboundT>> requestHandler,
 		Consumer<Throwable> errorHandler
 	) {
 		super(nestedCallRequestObserver, numberOfInitialMessages, requestHandler, errorHandler);
