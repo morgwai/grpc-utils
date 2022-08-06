@@ -30,6 +30,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+	/**
+	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int,
+	 * BiConsumer, Consumer, ServerCallStreamObserver) super}.
+	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
@@ -42,6 +46,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		buffer = createBuffer(outboundObserver);
 	}
 
+	/**
+	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int,
+	 * ServerCallStreamObserver) super}.
+	 */
 	protected OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
@@ -51,6 +59,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		buffer = createBuffer(outboundObserver);
 	}
 
+	/**
+	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int)
+	 * super}.
+	 */
 	protected OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages
@@ -60,6 +72,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		buffer = createBuffer(outboundObserver);
 	}
 
+	/**
+	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int,
+	 * BiConsumer, Consumer, Consumer) super}.
+	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
@@ -84,8 +100,8 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 			}
 
 			/**
-			 * {@link ConcurrentInboundObserver} tracks individual requests and takes care of
-			 * calling {@code responseObserver.onCompleted()}.
+			 * {@link ConcurrentInboundObserver} tracks individual messages and takes care of
+			 * calling {@code outboundObserver.onCompleted()}.
 			 */
 			@Override public void close() {}
 		});
@@ -94,31 +110,32 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Constructs a new {@link OutboundBucketObserver IndividualInboundMessageResultObserver} that
-	 * instead of writing messages directly to the parent outbound observer, buffers them in its
-	 * associated bucket.
-	 * <b>NOTE:</b> Applications that create additional individual observers, should be very wary as
+	 * Constructs a new {@link OutboundBucketObserver OutboundSubstreamObserver} that instead of
+	 * writing messages directly to the parent outbound observer, buffers them in its associated
+	 * bucket.
+	 * <p>
+	 * <b>NOTE:</b> Applications that create additional outbound substreams, should be very wary as
 	 * all buckets associated with subsequently received inbound messages will be buffered until the
-	 * additionally created observer is closed.
+	 * additionally created substream is completed.</p>
 	 */
 	@Override
-	public IndividualInboundMessageResultObserver newIndividualObserver() {
+	public OutboundSubstreamObserver newOutboundSubstream() {
 		return new OutboundBucketObserver(buffer.addBucket());
 	}
 
 
 
 	/**
-	 * An {@link IndividualInboundMessageResultObserver} that instead of writing messages directly
-	 * to the parent outbound observer, buffers them in its associated bucket.
+	 * An {@link OutboundBucketObserver OutboundSubstreamObserver} that instead of writing messages
+	 * directly to the parent outbound observer, buffers them in its associated bucket.
 	 */
-	protected class OutboundBucketObserver extends IndividualInboundMessageResultObserver {
+	public class OutboundBucketObserver extends OutboundSubstreamObserver {
 
 		final OutputStream<OutboundT> bucket;
 
 
 
-		OutboundBucketObserver(OutputStream<OutboundT> bucket) {
+		protected OutboundBucketObserver(OutputStream<OutboundT> bucket) {
 			this.bucket = bucket;
 		}
 

@@ -19,14 +19,14 @@ import io.grpc.stub.*;
 
 
 /**
- * todo: update
  * A fake {@link CallStreamObserver} testing helper class.
  * Helps to emulate behavior of an inbound and the gRPC system.
  * <p>
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
  * <p>
- * Usage:<ol>
+ * Usage:</p>
+ * <ol>
  *   <li>Configure observer's readiness by adjusting {@link #outputBufferSize} and
  *     {@link #unreadyDurationMillis} variables.</li>
  *   <li>Depending on client type (unary/streaming) of your gRPC method pass it to one of
@@ -35,10 +35,10 @@ import io.grpc.stub.*;
  *   <li>{@link #awaitFinalization(long)} can be used to wait until {@link #onCompleted()} or
  *     {@link #onError(Throwable)} is called.</li>
  *   <li>Client canceling can be simulated using {@link #simulateCancel()} method.</li>
- *   <li>Results can be verified with {@link #getOutputData()}, {@link #getFinalizedCount()},
+ *   <li>Results can be verified with {@link #getOutputData()}, {@link #isFinalized()},
  *     {@link #getReportedError()} methods and by shutting down and inspecting
  *     {@link LoggingExecutor} supplied to the constructor.</li>
- * </ol></p>
+ * </ol>
  */
 public class FakeOutboundObserver<OutboundT, ControlT>
 		extends CallStreamObserver<OutboundT> {
@@ -319,7 +319,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		// call beforeStart(...) if needed
 		final var concurrentInboundObserver =
 				(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>) inboundObserver;
-		if (concurrentInboundObserver.onPreStartHandler != null) {
+		if (concurrentInboundObserver.onBeforeStartHandler != null) {
 			concurrentInboundObserver.beforeStart(this.asClientCallControlObserver());
 		}
 
