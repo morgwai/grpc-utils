@@ -316,17 +316,21 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		StreamObserver<InboundT> inboundObserver,
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer
 	) {
-		if (inboundObserver instanceof ClientResponseObserver) {
-			final var clientResponseObserver =
-					(ClientResponseObserver<ControlT, InboundT>) inboundObserver;
-			clientResponseObserver.beforeStart(this.asClientCallControlObserver());
+		// call beforeStart(...) if needed
+		final var concurrentInboundObserver =
+				(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>) inboundObserver;
+		if (concurrentInboundObserver.inboundControlObserver == null) {
+			concurrentInboundObserver.beforeStart(this.asClientCallControlObserver());
 		}
+
+		// initial onReady() callback
 		if (onReadyHandler != null) {
 			synchronized (listenerLock) {
 				log.fine("delivering initial onReady() callback");
 				if (onReadyHandler != null) onReadyHandler.run();
 			}
 		}
+
 		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) inboundMessageProducer;
 		this.requestObserver = new StreamObserver<InboundT>() {
 

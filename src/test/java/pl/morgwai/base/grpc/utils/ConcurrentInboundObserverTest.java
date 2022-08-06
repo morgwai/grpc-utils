@@ -44,7 +44,7 @@ public abstract class ConcurrentInboundObserverTest {
 	/**
 	 * Creates test subject.
 	 */
-	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage>
+	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 			newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
