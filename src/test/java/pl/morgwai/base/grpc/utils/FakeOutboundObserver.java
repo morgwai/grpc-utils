@@ -319,7 +319,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		// call beforeStart(...) if needed
 		final var concurrentInboundObserver =
 				(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>) inboundObserver;
-		if (concurrentInboundObserver.inboundControlObserver == null) {
+		if (concurrentInboundObserver.onPreStartHandler != null) {
 			concurrentInboundObserver.beforeStart(this.asClientCallControlObserver());
 		}
 

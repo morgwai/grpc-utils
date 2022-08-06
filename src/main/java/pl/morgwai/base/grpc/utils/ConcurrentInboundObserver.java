@@ -4,9 +4,8 @@ package pl.morgwai.base.grpc.utils;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-
-import javax.annotation.Nullable;
 
 import io.grpc.stub.*;
 
@@ -18,10 +17,6 @@ import io.grpc.stub.*;
  * threads. Handles all the synchronization and manual flow-control to maintain desired number of
  * messages processed concurrently and prevent excessive buffering.
  * <p>
- * This class should rather not be subclassed directly: see
- * {@link ConcurrentInboundObserverSendingToParent} and
- * {@link ConcurrentInboundObserverSendingToNested}.</p>
- * <p>
  * If processing is not dispatched to other threads, then processing of inbound messages will be
  * sequential with respect to flow-control. {@code numberOfInitialMessages} constructor param should
  * usually be set to 1 in such cases.</p>
@@ -29,6 +24,7 @@ import io.grpc.stub.*;
  * If processing is dispatched to other threads, results may be sent in different order: see
  * {@link OrderedConcurrentInboundObserver} if the order needs to be retained.</p>
  * <p>
+ * TODO: client
  * Typical server usage:</p>
  * <pre>
  * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
@@ -74,117 +70,166 @@ import io.grpc.stub.*;
  *         (error) -&gt; log.info("error occurred: " + error)
  *     );
  * }</pre>
- * @see ConcurrentInboundObserverSendingToParent
- * @see ConcurrentInboundObserverSendingToNested
  * @see OrderedConcurrentInboundObserver
- * @see OrderedConcurrentInboundObserverSendingToParent
- * @see OrderedConcurrentInboundObserverSendingToChained
  */
-public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		implements ClientResponseObserver<ControlT, InboundT> {
 
 
 
 	/**
-	 * Default implementation calls {@link #errorHandler}.
+	 * Produces response messages to the given {@code inboundMessage}. Responses must be submitted
+	 * to {@code individualInboundMessageResultObserver} that is associated with this
+	 * {@code inboundMessage} using {@link CallStreamObserver#onNext(Object)
+	 * individualInboundMessageResultObserver.onNext(response)}.
+	 * Once all responses to this {@code inboundMessage} are submitted, this method must call
+	 * {@link IndividualInboundMessageResultObserver#onCompleted()
+	 * individualInboundMessageResultObserver.onComplete()}.
+	 * <p>
+	 * {@code individualInboundMessageResultObserver} is thread-safe and implementations of this
+	 * method may freely dispatch work to several other threads.</p>
+	 * <p>
+	 * {@code individualInboundMessageResultObserver.cancel(...)} can only be called if the parent
+	 * outbound observer is a {@link ClientCallStreamObserver}.</p>
+	 * <p>
+	 * To avoid excessive buffering, implementations should respect
+	 * {@code individualInboundMessageResultObserver}'s readiness with
+	 * {@link CallStreamObserver#isReady() individualInboundMessageResultObserver.isReady()} and
+	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
+	 * individualInboundMessageResultObserver.setOnReadyHandler(...)} methods.<br/>
+	 * Consider using {@link DispatchingOnReadyHandler} or
+	 * {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}.</p>
+	 * <p>
+	 * Default implementation calls {@link #onInboundMessageHandler}.</p>
+	 *
+	 * @see IndividualInboundMessageResultObserver
+	 */
+	protected void onInboundMessage(
+		InboundT inboundMessage,
+		CallStreamObserver<OutboundT> individualInboundMessageResultObserver
+	) {
+		onInboundMessageHandler.accept(inboundMessage, individualInboundMessageResultObserver);
+	}
+
+	/**
+	 * Called by {@link #onInboundMessage(Object, CallStreamObserver)}.
+	 * Initialized via the param of
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
+	 * Consumer, ServerCallStreamObserver)} and
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
+	 * Consumer, Consumer)} constructors.
+	 */
+	protected final BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler;
+
+
+
+	/**
+	 * Default implementation calls {@link #onErrorHandler}.
 	 * @see StreamObserver#onError(Throwable)
 	 */
 	@Override
 	public void onError(Throwable error) {
-		if (errorHandler != null) errorHandler.accept(error);
+		if (onErrorHandler != null) onErrorHandler.accept(error);
 	}
 
 	/**
 	 * Called by {@link #onError(Throwable)}. Initialized via the param of
-	 * {@link #ConcurrentInboundObserver(ClientCallStreamObserver, int, Consumer, Consumer)} and
-	 * {@link #ConcurrentInboundObserver(ServerCallStreamObserver, int, Consumer, Consumer)}
-	 * constructors.
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
+	 * Consumer, ServerCallStreamObserver)} and
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
+	 * Consumer, Consumer)} constructors.
 	 */
-	protected final Consumer<Throwable> errorHandler;
+	protected final Consumer<Throwable> onErrorHandler;
 
 
 
 	/**
 	 * Called by {@link #beforeStart(ClientCallStreamObserver)}, default implementation calls
-	 * {@link #preStartHandler}.
+	 * {@link #onPreStartHandler}.
 	 * @see ClientResponseObserver#beforeStart(ClientCallStreamObserver)
 	 */
 	protected void onPreStart(ClientCallStreamObserver<ControlT> inboundControlObserver) {
-		if (preStartHandler != null) preStartHandler.accept(inboundControlObserver);
+		if (onPreStartHandler != null) onPreStartHandler.accept(inboundControlObserver);
 	}
 
 	/**
 	 * Called by {@link #onPreStart(ClientCallStreamObserver)}. Initialized via the param of
-	 * {@link #ConcurrentInboundObserver(ClientCallStreamObserver, int, Consumer, Consumer)} and
-	 * {@link #ConcurrentInboundObserver(ServerCallStreamObserver, int, Consumer, Consumer)}
-	 * constructors.
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
+	 * Consumer, Consumer)} constructor.
 	 */
-	protected final Consumer<ClientCallStreamObserver<ControlT>> preStartHandler;
+	protected final Consumer<ClientCallStreamObserver<ControlT>> onPreStartHandler;
 
 
+
+	public ConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
+		int numberOfInitialMessages,
+		BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		Consumer<Throwable> onErrorHandler,
+		ServerCallStreamObserver<ControlT> inboundControlObserver
+	) {
+		this(outboundObserver, numberOfInitialMessages, onInboundMessageHandler, onErrorHandler,
+				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		setInboundControlObserver(inboundControlObserver);
+	}
+
+	protected ConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
+		int numberOfInitialMessages,
+		ServerCallStreamObserver<ControlT> inboundControlObserver
+	) {
+		this(outboundObserver, numberOfInitialMessages, null, null,
+				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		setInboundControlObserver(inboundControlObserver);
+	}
+
+
+
+
+	protected ConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
+		int numberOfInitialMessages
+	) {
+		this(outboundObserver, numberOfInitialMessages, null, null,
+				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+	}
 
 	/**
-	 * Configures flow control, initializes {@link #errorHandler} and {@link #preStartHandler}.
-	 * @param serverResponseObserver response observer of the given gRPC method.
+	 * Configures flow control, initializes {@link #onErrorHandler} and {@link #onPreStartHandler}.
+	 * @param outboundObserver response observer of the given gRPC method.
 	 * @param numberOfInitialMessages the constructed observer will call
 	 *     {@code request(numberOfInitiallyRequestedMessages)} on observer set by
 	 *     {@link #setInboundControlObserver(CallStreamObserver)}. If message processing is
 	 *     dispatched to other threads, this will be the maximum number of inbound messages
 	 *     processed concurrently. It should correspond to server's concurrent processing
 	 *     capabilities.
-	 * @param errorHandler stored on {@link #errorHandler} to be called by
+	 * @param onInboundMessageHandler todo
+	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
-	 * @param preStartHandler stored on {@link #preStartHandler} to be called by
+	 * @param onPreStartHandler stored on {@link #onPreStartHandler} to be called by
 	 *     {@link #onPreStart(ClientCallStreamObserver)}
 	 */
-	protected ConcurrentInboundObserver(
-		ServerCallStreamObserver<OutboundT> serverResponseObserver,
-		int numberOfInitialMessages,
-		Consumer<Throwable> errorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
-	) {
-		this(null, serverResponseObserver, numberOfInitialMessages, errorHandler, preStartHandler);
-	}
-
-	/**
-	 * Version of
-	 * {@link #ConcurrentInboundObserver(ServerCallStreamObserver, int, Consumer, Consumer)} for
-	 * cases when the outbound is a {@link ClientCallStreamObserver client request observer}.
-	 */
-	protected ConcurrentInboundObserver(
-		ClientCallStreamObserver<OutboundT> clientRequestObserver,
-		int numberOfInitialMessages,
-		Consumer<Throwable> errorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
-	) {
-		this(clientRequestObserver, clientRequestObserver, numberOfInitialMessages, errorHandler,
-				preStartHandler);
-	}
-
-
-
-	private ConcurrentInboundObserver(
-		ClientCallStreamObserver<OutboundT> clientRequestObserver,
+	public ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
-		Consumer<Throwable> errorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
+		BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		Consumer<Throwable> onErrorHandler,
+		Consumer<ClientCallStreamObserver<ControlT>> onPreStartHandler
 	) {
-		this.clientRequestObserver = clientRequestObserver;
 		this.outboundObserver = outboundObserver;
 		idleCount = numberOfInitialMessages;
-		this.errorHandler = errorHandler;
-		this.preStartHandler = preStartHandler;
-		outboundObserver.setOnReadyHandler(this::onOutboundReady);
+		this.onInboundMessageHandler = onInboundMessageHandler;
+		this.onErrorHandler = onErrorHandler;
+		this.onPreStartHandler = onPreStartHandler;
+		outboundObserver.setOnReadyHandler(this::onReady);
 	}
 
 
 
 	final CallStreamObserver<OutboundT> outboundObserver;
-	final ClientCallStreamObserver<OutboundT> clientRequestObserver;// copy of above for cancelling
 
 	protected CallStreamObserver<?> inboundControlObserver; // for request(n)
-	boolean inboundClosed = false;
+	boolean halfClosed = false;
 	int idleCount;
 	final Set<IndividualInboundMessageResultObserver> activeIndividualObservers =
 		ConcurrentHashMap.newKeySet();
@@ -198,7 +243,7 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #beforeStart(ClientCallStreamObserver)} in case of inbound being response messages
 	 * from a previous chained client call.
 	 */
-	protected final void setInboundControlObserver(CallStreamObserver<?> inboundControlObserver) {
+	final void setInboundControlObserver(CallStreamObserver<?> inboundControlObserver) {
 		if (this.inboundControlObserver != null) {
 			throw new IllegalStateException("inboundControlObserver already set");
 		}
@@ -216,9 +261,9 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	void onOutboundReady() {
+	final void onReady() {
 		synchronized (lock) {
-			if (idleCount > 0 && !inboundClosed) {
+			if (idleCount > 0 && !halfClosed) {
 				inboundControlObserver.request(idleCount);
 				idleCount = 0;
 			}
@@ -228,19 +273,49 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 			if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 		}
 		// TODO: add routines for checking processing resources availability
+		onOutboundReady();
+	}
+
+	/**
+	 * Subclasses may override this method if additional actions need to be taken when outbound
+	 * stream becomes ready.
+	 */
+	protected void onOutboundReady() {}
+
+
+
+	/**
+	 * Calls {@link #onInboundMessage(Object, CallStreamObserver)
+	 * onRequest}({@code request}, {@link #newIndividualObserver()}) and if the outbound observer is
+	 * ready, then also {@code individualObserver.onReadyHandler.run()}.
+	 */
+	@Override
+	public final void onNext(InboundT request) {
+		final var individualObserver = newIndividualObserver();
+		onInboundMessage(request, individualObserver);
+		synchronized (lock) {
+			if ( !outboundObserver.isReady()) return;
+		}
+		if (individualObserver.onReadyHandler != null) individualObserver.onReadyHandler.run();
 	}
 
 
 
 	@Override
-	public void onCompleted() {
+	public final void onCompleted() {
 		synchronized (lock) {
-			inboundClosed = true;
+			halfClosed = true;
 			if (activeIndividualObservers.isEmpty()) {
 				outboundObserver.onCompleted();
 			}
 		}
+		onHalfClose();
 	}
+
+	/**
+	 * Called by {@link #onCompleted()}.
+	 */
+	protected void onHalfClose() {}
 
 
 
@@ -267,8 +342,7 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * thread-safe. A new instance is created each time a new inbound message arrives via
 	 * {@link #onNext(Object)}.
 	 */
-	protected class IndividualInboundMessageResultObserver
-			extends ClientCallStreamObserver<OutboundT> {
+	protected class IndividualInboundMessageResultObserver extends CallStreamObserver<OutboundT> {
 
 		volatile Runnable onReadyHandler;
 
@@ -291,7 +365,7 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 				if ( !activeIndividualObservers.remove(this)) {
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
-				if (inboundClosed && activeIndividualObservers.isEmpty()) {
+				if (halfClosed && activeIndividualObservers.isEmpty()) {
 					outboundObserver.onCompleted();
 					return;
 				}
@@ -333,18 +407,6 @@ public abstract class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				outboundObserver.onError(error);
-			}
-		}
-
-
-
-		@Override
-		public void cancel(@Nullable String message, @Nullable Throwable cause) {
-			synchronized (lock) {
-				if ( !activeIndividualObservers.contains(this)) {
-					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
-				}
-				clientRequestObserver.cancel(message, cause);
 			}
 		}
 

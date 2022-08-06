@@ -1,6 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import io.grpc.stub.*;
@@ -20,7 +21,7 @@ import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
  * messages too high may lead to "head of the line blocking" resulting in an excessive buffer
  * growth.</p>
  */
-public abstract class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		extends ConcurrentInboundObserver<InboundT, OutboundT, ControlT> {
 
 
@@ -29,24 +30,46 @@ public abstract class OrderedConcurrentInboundObserver<InboundT, OutboundT, Cont
 
 
 
-	protected OrderedConcurrentInboundObserver(
-		ServerCallStreamObserver<OutboundT> serverResponseObserver,
+	public OrderedConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
+		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
 		Consumer<Throwable> errorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
+		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
-		super(serverResponseObserver, numberOfInitialMessages, errorHandler, preStartHandler);
-		buffer = createBuffer(serverResponseObserver);
+		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, errorHandler,
+				inboundControlObserver);
+		buffer = createBuffer(outboundObserver);
 	}
 
 	protected OrderedConcurrentInboundObserver(
-		ClientCallStreamObserver<OutboundT> clientRequestObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
+		ServerCallStreamObserver<ControlT> inboundControlObserver
+	) {
+		super(outboundObserver, numberOfInitialMessages, null, null, inboundControlObserver);
+		buffer = createBuffer(outboundObserver);
+	}
+
+	protected OrderedConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
+		int numberOfInitialMessages
+	) {
+		super(outboundObserver, numberOfInitialMessages, null, null,
+				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		buffer = createBuffer(outboundObserver);
+	}
+
+	public OrderedConcurrentInboundObserver(
+		CallStreamObserver<OutboundT> outboundObserver,
+		int numberOfInitialMessages,
+		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
 		Consumer<Throwable> errorHandler,
 		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
 	) {
-		super(clientRequestObserver, numberOfInitialMessages, errorHandler, preStartHandler);
-		buffer = createBuffer(clientRequestObserver);
+		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, errorHandler,
+				preStartHandler);
+		buffer = createBuffer(outboundObserver);
 	}
 
 	private OrderedConcurrentOutputBuffer<OutboundT> createBuffer(

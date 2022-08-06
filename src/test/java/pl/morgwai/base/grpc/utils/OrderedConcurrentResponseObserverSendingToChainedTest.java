@@ -8,7 +8,7 @@ import io.grpc.stub.CallStreamObserver;
 
 
 
-public class ConcurrentInboundObserverSendingToParentNoNestingTest
+public class OrderedConcurrentResponseObserverSendingToChainedTest
 		extends ConcurrentInboundObserverTest {
 
 
@@ -20,11 +20,12 @@ public class ConcurrentInboundObserverSendingToParentNoNestingTest
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
 		Consumer<Throwable> errorHandler
 	) {
-		return new ConcurrentInboundObserverSendingToParent<>(
-			outboundObserver.asServerCallResponseObserver(),
+		return new OrderedConcurrentInboundObserver<>(
+			outboundObserver.asClientCallRequestObserver(),
 			maxConcurrentMessages,
 			messageHandler,
-			errorHandler
+			errorHandler,
+			(inboundControlObserver) -> {}
 		);
 	}
 }
