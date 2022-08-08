@@ -12,14 +12,12 @@ import pl.morgwai.base.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
 
 
 /**
- * A {@link ConcurrentInboundObserver} that uses {@link OrderedConcurrentOutputBuffer} to
- * automatically ensure that outbound messages are sent in the order corresponding to inbound
- * messages order.
+ * A {@link ConcurrentInboundObserver} that uses {@link OrderedConcurrentOutputBuffer} to ensure
+ * that outbound messages are sent in the order corresponding to the inbound messages order.
  * <p>
  * Note: as only results of the processing of a current "head" inbound message are sent directly to
- * the output and the rest is buffered, setting the number of concurrently processed inbound
- * messages too high may lead to "head of the line blocking" resulting in an excessive buffer
- * growth.</p>
+ * the output and the rest is buffered, passing too high {@code maxConcurrentMessages} constructor
+ * param may lead to "head of the line blocking" resulting in an excessive buffer growth.</p>
  */
 public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		extends ConcurrentInboundObserver<InboundT, OutboundT, ControlT> {
@@ -36,13 +34,13 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
-		int numberOfInitialMessages,
+		int maxConcurrentMessages,
 		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 				onErrorHandler,
 		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
-		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, onErrorHandler,
+		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
 				inboundControlObserver);
 		buffer = createBuffer(outboundObserver);
 	}
@@ -53,10 +51,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	protected OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
-		int numberOfInitialMessages,
+		int maxConcurrentMessages,
 		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
-		super(outboundObserver, numberOfInitialMessages, null, null, inboundControlObserver);
+		super(outboundObserver, maxConcurrentMessages, null, null, inboundControlObserver);
 		buffer = createBuffer(outboundObserver);
 	}
 
@@ -66,9 +64,9 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	protected OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
-		int numberOfInitialMessages
+		int maxConcurrentMessages
 	) {
-		super(outboundObserver, numberOfInitialMessages, null, null,
+		super(outboundObserver, maxConcurrentMessages, null, null,
 				(Consumer<ClientCallStreamObserver<ControlT>>) null);
 		buffer = createBuffer(outboundObserver);
 	}
@@ -79,13 +77,13 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
-		int numberOfInitialMessages,
+		int maxConcurrentMessages,
 		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 				onErrorHandler,
 		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
 	) {
-		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, onErrorHandler,
+		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
 				preStartHandler);
 		buffer = createBuffer(outboundObserver);
 	}
