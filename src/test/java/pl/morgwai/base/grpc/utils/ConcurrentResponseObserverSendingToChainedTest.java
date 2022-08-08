@@ -2,7 +2,6 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import io.grpc.stub.CallStreamObserver;
 
@@ -14,17 +13,18 @@ public class ConcurrentResponseObserverSendingToChainedTest
 
 
 	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
+	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 			newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
-		Consumer<Throwable> errorHandler
+		BiConsumer<Throwable, ConcurrentInboundObserver<
+				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return new ConcurrentInboundObserver<>(
 			outboundObserver.asClientCallRequestObserver(),
 			maxConcurrentMessages,
 			messageHandler,
-			errorHandler,
+			onErrorHandler,
 			(inboundControlObserver) -> {}
 		);
 	}

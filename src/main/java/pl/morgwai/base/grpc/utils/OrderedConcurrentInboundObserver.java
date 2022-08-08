@@ -32,16 +32,17 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	/**
 	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int,
-	 * BiConsumer, Consumer, ServerCallStreamObserver) super}.
+	 * BiConsumer, BiConsumer, ServerCallStreamObserver) super}.
 	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
 		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
-		Consumer<Throwable> errorHandler,
+		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
 		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
-		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, errorHandler,
+		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, onErrorHandler,
 				inboundControlObserver);
 		buffer = createBuffer(outboundObserver);
 	}
@@ -74,16 +75,17 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	/**
 	 * See {@link ConcurrentInboundObserver#ConcurrentInboundObserver(CallStreamObserver, int,
-	 * BiConsumer, Consumer, Consumer) super}.
+	 * BiConsumer, BiConsumer, Consumer) super}.
 	 */
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int numberOfInitialMessages,
 		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
-		Consumer<Throwable> errorHandler,
+		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
 		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
 	) {
-		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, errorHandler,
+		super(outboundObserver, numberOfInitialMessages, inboundMessageHandler, onErrorHandler,
 				preStartHandler);
 		buffer = createBuffer(outboundObserver);
 	}

@@ -44,15 +44,18 @@ public abstract class ConcurrentInboundObserverTest {
 	/**
 	 * Creates test subject.
 	 */
-	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
+	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 			newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
-		Consumer<Throwable> errorHandler
+		BiConsumer<Throwable, ConcurrentInboundObserver<
+				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	);
 
-	Consumer<Throwable> newErrorHandler(Thread thread) {
-		return (error) -> thread.interrupt();
+	BiConsumer<Throwable,
+			ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>>
+					newErrorHandler(Thread thread) {
+		return (error, thisObserver) -> thread.interrupt();
 	}
 
 
