@@ -416,7 +416,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	protected CallStreamObserver<ControlT> inboundControlObserver; // for request(n)
 	boolean halfClosed = false;
-	int idleCount;
+	int idleCount;  // increased if outbound unready after completing a substream from onNext(...)
 	final Set<OutboundSubstreamObserver> activeOutboundSubstreams =
 			ConcurrentHashMap.newKeySet();
 
@@ -454,6 +454,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+	/**
+	 * Calls {@link OutboundSubstreamObserver#onReadyHandler individual onReadyHandlers} registered
+	 * via {@link #activeOutboundSubstreams active substream observers}, then requests number of
+	 * inbound messages equal to {@link #idleCount} from {@link #inboundControlObserver} and resets
+	 * the counter to {@code 0}.
+	 */
 	final void onReady() {
 		for (var substreamObserver: activeOutboundSubstreams) {
 			// a new request can't arrive now thanks to Listener's concurrency contract
@@ -495,16 +501,16 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Waits for all outbound substreams created with {@link #newOutboundSubstream()} to be marked
 	 * as completed, then calls {@code onError(errorToSend)} on the parent outbound observer.
-	 * This method should usually be called only from {@link #onError(Throwable)} or
-	 * {@link #onHalfClosed()} after the inbound stream is closed.
+	 * This method should only be called from {@link #onError(Throwable)} or {@link #onHalfClosed()}
+	 * after the inbound stream is closed.
 	 * <p>
 	 * If after this method is called, any of the remaining individual outbound substream observers
 	 * gets a call to its {@link OutboundSubstreamObserver#onError(Throwable)}, then
 	 * {@code errorToSend} will be discarded.</p>
 	 * <p>
 	 * Calling this method from {@link #onInboundMessage(Object, CallStreamObserver)} will have
-	 * unpredictable results due to race conditions between threads handling newly incoming inbound
-	 * messages from still unclosed inbound stream.</p>
+	 * unpredictable results due to race conditions with/between threads handling newly incoming
+	 * inbound messages from the still unclosed inbound stream.</p>
 	 */
 	public final void waitForSubstreamsToCompleteAndSendError(Throwable errorToSend) {
 		this.errorToSend = errorToSend;
@@ -560,8 +566,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * A thread-safe substream of the parent outbound stream. The parent will not be closed until
-	 * all substreams are marked as completed.
+	 * A thread-safe substream of the parent outbound stream. The parent will be marked as completed
+	 * automatically when and only if all its substreams are marked as completed.
 	 * @see #newOutboundSubstream()
 	 */
 	public class OutboundSubstreamObserver extends CallStreamObserver<OutboundT> {
