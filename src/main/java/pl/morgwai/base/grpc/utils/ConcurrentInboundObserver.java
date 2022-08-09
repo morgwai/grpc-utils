@@ -478,6 +478,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	@Override
 	public final void onNext(InboundT message) {
 		final var individualObserver = newOutboundSubstream();
+		individualObserver.requestNextAfterCompletion = true;
 		onInboundMessage(message, individualObserver);
 		synchronized (lock) {
 			if ( !outboundObserver.isReady()) return;
@@ -566,6 +567,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public class OutboundSubstreamObserver extends CallStreamObserver<OutboundT> {
 
 		volatile Runnable onReadyHandler;
+		boolean requestNextAfterCompletion = false;
 
 
 
@@ -595,10 +597,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 					return;
 				}
 
-				if (outboundObserver.isReady()) {
-					inboundControlObserver.request(1);
-				} else {
-					idleCount++;
+				if (requestNextAfterCompletion) {
+					if (outboundObserver.isReady()) {
+						inboundControlObserver.request(1);
+					} else {
+						idleCount++;
+					}
 				}
 			}
 		}
