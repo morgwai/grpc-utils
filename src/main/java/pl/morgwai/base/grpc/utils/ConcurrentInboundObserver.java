@@ -487,6 +487,31 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+	Throwable errorToSend;
+
+
+
+	/**
+	 * Waits for all outbound substreams created with {@link #newOutboundSubstream()} to be marked
+	 * as completed, then calls {@code onError(errorToSend)} on the parent outbound observer.
+	 * This method should usually be called only from {@link #onError(Throwable)} or
+	 * {@link #onHalfClosed()} after the inbound stream is closed.
+	 * <p>
+	 * If after this method is called, any of the remaining individual outbound substream observers
+	 * gets a call to its {@link OutboundSubstreamObserver#onError(Throwable)}, then
+	 * {@code errorToSend} will be discarded.</p>
+	 * <p>
+	 * Calling this method from {@link #onInboundMessage(Object, CallStreamObserver)} will have
+	 * unpredictable results due to race conditions between threads handling newly incoming inbound
+	 * messages from still unclosed inbound stream.</p>
+	 */
+	public final void waitForSubstreamsToCompleteAndSendError(Throwable errorToSend) {
+		this.errorToSend = errorToSend;
+		onCompleted();
+	}
+
+
+
 	/**
 	 * Calls {@link #onHalfClosed()}, marks the inbound as completed and if all
 	 * {@link #newOutboundSubstream() outbound substreams} are marked as completed, then marks
@@ -496,9 +521,14 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public final void onCompleted() {
 		onHalfClosed();
 		synchronized (lock) {
+			if (halfClosed) return;  // onHalfClosed called waitForSubstreamsToCompleteAndSendError
 			halfClosed = true;
 			if (activeOutboundSubstreams.isEmpty()) {
-				outboundObserver.onCompleted();
+				if (errorToSend != null) {
+					outboundObserver.onError(errorToSend);
+				} else {
+					outboundObserver.onCompleted();
+				}
 			}
 		}
 	}
@@ -557,7 +587,11 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 					throw new IllegalStateException(OBSERVER_FINALIZED_MESSAGE);
 				}
 				if (halfClosed && activeOutboundSubstreams.isEmpty()) {
-					outboundObserver.onCompleted();
+					if (errorToSend != null) {
+						outboundObserver.onError(errorToSend);
+					} else {
+						outboundObserver.onCompleted();
+					}
 					return;
 				}
 
