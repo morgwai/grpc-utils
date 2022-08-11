@@ -3,7 +3,6 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.*;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
 
 import io.grpc.*;
@@ -42,27 +41,27 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResultT> outboundObserver,
 		Executor taskExecutor,
-		boolean waitForOtherTasksToFinishOnError,
-		Iterator<ResultT>... producers
+		boolean waitForOtherTasksToFinishOnException,
+		Iterator<ResultT>... taskProducers
 	) {
-		this.producers = producers;
+		this.taskProducers = taskProducers;
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
-		this.waitForOtherTasksToFinishOnError = waitForOtherTasksToFinishOnError;
-		taskRunning = new boolean[producers.length];
+		this.waitForOtherTasksToFinishOnException = waitForOtherTasksToFinishOnException;
+		taskRunning = new boolean[taskProducers.length];
 	}
 
 	@SafeVarargs
 	public static <ResultT> void copyWithFlowControl(
 		CallStreamObserver<ResultT> outboundObserver,
 		Executor taskExecutor,
-		boolean waitForOtherTasksToFinishOnError,
+		boolean waitForOtherTasksToFinishOnException,
 		Iterator<ResultT>... producers
 	) {
 		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			taskExecutor,
-			waitForOtherTasksToFinishOnError,
+			waitForOtherTasksToFinishOnException,
 			producers
 		));
 	}
@@ -99,10 +98,12 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 		));
 	}
 
+
+
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<ResultT> outboundObserver,
 		Executor taskExecutor,
-		boolean waitForOtherTasksToFinishOnError,
+		boolean waitForOtherTasksToFinishOnException,
 		int numberOfTasks,
 		Function<Integer, Boolean> taskHasMoreResultsIndicator,
 		Function<Integer, ResultT> taskResultProducer,
@@ -111,7 +112,7 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 		this(
 			outboundObserver,
 			taskExecutor,
-			waitForOtherTasksToFinishOnError,
+			waitForOtherTasksToFinishOnException,
 			producerFunctionsToIterators(
 					numberOfTasks, taskHasMoreResultsIndicator, taskResultProducer, taskToString)
 		);
@@ -120,7 +121,7 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 	public static <ResultT> void copyWithFlowControl(
 		CallStreamObserver<ResultT> outboundObserver,
 		Executor taskExecutor,
-		boolean waitForOtherTasksToFinishOnError,
+		boolean waitForOtherTasksToFinishOnException,
 		int numberOfTasks,
 		Function<Integer, Boolean> taskHasMoreResultsIndicator,
 		Function<Integer, ResultT> taskResultProducer
@@ -128,7 +129,7 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			taskExecutor,
-			waitForOtherTasksToFinishOnError,
+			waitForOtherTasksToFinishOnException,
 			numberOfTasks,
 			taskHasMoreResultsIndicator,
 			taskResultProducer,
@@ -156,86 +157,82 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 
 
 
-	final Iterator<ResultT>[] producers;
 	final CallStreamObserver<ResultT> outboundObserver;
 	final Executor taskExecutor;
-	final boolean waitForOtherTasksToFinishOnError;
+	final boolean waitForOtherTasksToFinishOnException;
+	final Iterator<ResultT>[] taskProducers;
 
-	Throwable error;
 	final boolean[] taskRunning;
 	final Object lock = new Object();
-	final AtomicInteger completedTaskCount = new AtomicInteger(0);
+	int completedTaskCount = 0;
+	Throwable error;
 
 
 
 	/**
-	 * Dispatches tasks to handle a single cycle of observer's readiness.
+	 * For each task dispatches to {@code taskExecutor} a handler of a single cycle of readiness of
+	 * {@code outboundObserver}.
 	 */
 	public void run() {
 		synchronized (lock) {
-			if (error != null && !waitForOtherTasksToFinishOnError) return;
-			for (int taskNumber = 0; taskNumber < producers.length; taskNumber++) {
+			if (completedTaskCount == taskProducers.length
+					|| (error != null && !waitForOtherTasksToFinishOnException)) {
+				return;
+			}
+			for (int taskNumber = 0; taskNumber < taskProducers.length; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
 				if (taskRunning[taskNumber]) continue;
 				taskRunning[taskNumber] = true;
-				taskExecutor.execute(new OnReadyHandlerTask(taskNumber));
+				taskExecutor.execute(new TaskOnReadyHandler(taskNumber));
 			}
 		}
 	}
 
 
 
-	class OnReadyHandlerTask implements Runnable {
+	/**
+	 * Handles a single cycle of readiness for a task with a number given by the constructor param.
+	 */
+	class TaskOnReadyHandler implements Runnable {
 
 		final int taskNumber;
 		final Iterator<ResultT> taskProducer;
 
 
 
-		OnReadyHandlerTask(int taskNumber) {
+		TaskOnReadyHandler(int taskNumber) {
 			this.taskNumber = taskNumber;
-			taskProducer = producers[taskNumber];
+			taskProducer = taskProducers[taskNumber];
 		}
 
 
 
 		@Override public void run() {
-			var ready = true;
 			try {
-				if (taskProducer.hasNext()) {
+				boolean ready;
+				synchronized (lock) {
+					ready = outboundObserver.isReady();
+				}
+				while (ready && taskProducer.hasNext()) {
+					final var result = taskProducer.next();
 					synchronized (lock) {
+						outboundObserver.onNext(result);
 						ready = outboundObserver.isReady();
-						if ( !ready) {
-							taskRunning[taskNumber] = false;
-							return;
-						}
-					}
-					do {
-						final var result = taskProducer.next();
-						final var completed = !taskProducer.hasNext();
-						synchronized (lock) {
-							outboundObserver.onNext(result);
-							if (completed) break; // no need to check isReady, break immediately
-							ready = outboundObserver.isReady();
-							if ( !ready) {
-								taskRunning[taskNumber] = false;
-								return;
-							}
-						}
-					} while (true); // completed/unready cause break/return, no need for extra check
-				}
-				if (completedTaskCount.incrementAndGet() == producers.length) {
-					synchronized (lock) {
-						if (error == null) {
-							outboundObserver.onCompleted();
-						} else {
-							outboundObserver.onError(error);
-						}
 					}
 				}
-				// taskRunning[taskNumber] is left true to not respawn completed tasks
+				if ( !ready) {
+					taskRunning[taskNumber] = false;
+				} else synchronized (lock) {
+					if (++completedTaskCount < taskProducers.length) return;
+					// taskRunning[taskNumber] is left true to not respawn completed tasks
+					if (error == null) {
+						outboundObserver.onCompleted();
+					} else {
+						outboundObserver.onError(error);
+					}
+				}
 			} catch (Throwable throwable) {
 				synchronized (lock) {
 					if (error == null) {
@@ -243,8 +240,8 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 								? throwable
 								: Status.INTERNAL.withCause(throwable).asException();
 					}
-					if (!waitForOtherTasksToFinishOnError
-							|| completedTaskCount.incrementAndGet() == producers.length) {
+					if (!waitForOtherTasksToFinishOnException
+							|| ++completedTaskCount == taskProducers.length) {
 						outboundObserver.onError(error);
 					}
 				}
