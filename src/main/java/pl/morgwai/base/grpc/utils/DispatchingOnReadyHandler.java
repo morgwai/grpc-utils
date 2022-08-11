@@ -11,10 +11,12 @@ import io.grpc.stub.CallStreamObserver;
 
 
 /**
- * Streams messages to a {@link CallStreamObserver} from multiple threads with respect to
- * flow-control to ensure that no excessive buffering occurs. This class has similar purpose to
+ * Streams messages to an outbound {@link CallStreamObserver} from multiple sources in separate
+ * threads with respect to flow-control. Useful in sever methods when 1 request message can result
+ * in multiple response messages that can be produced concurrently in separate tasks.
+ * This class has similar purpose to
  * {@link io.grpc.stub.StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)}, but work
- * is dispatched to the supplied executor and parallelized according to the supplied param.
+ * is dispatched to the supplied executor and parallelized according to the supplied arguments.
  * <p>
  * Typical usage in streaming-server methods:</p>
  * <pre>
@@ -33,134 +35,184 @@ import io.grpc.stub.CallStreamObserver;
  *     ));
  * }</pre>
  */
-public class DispatchingOnReadyHandler<ResultT> implements Runnable {
+public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 
+	/**
+	 * Constructs a new handler with a number of tasks based on the length of {@code taskProducers}.
+	 * If any task throws an unexpected exception, it will be passed to
+	 * {@link Status#withCause(Throwable)} of {@link Status#INTERNAL} and reported via
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(status.asException())}.
+	 * @param outboundObserver target outbound observer to which messages from
+	 *     {@code messageProducers} will be streamed.
+	 * @param taskExecutor executor to which message producing tasks will be dispatched.
+	 * @param waitForOtherTasksToFinishOnException whether the remaining tasks should be allowed
+	 *     to complete in case some task throws an unexpected exception. After the remaining tasks
+	 *     are completed, the thrown exception will be passed to {@link Status#INTERNAL} as
+	 *     explained above. If multiple tasks throw, the first exception will be passed and the rest
+	 *     will be discarded.
+	 * @param messageProducers each element produces in a separate task (dispatched to
+	 *     {@code taskExecutor}), messages that will be streamed to {@code outboundObserver}.
+	 */
 	@SafeVarargs
 	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResultT> outboundObserver,
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
 		boolean waitForOtherTasksToFinishOnException,
-		Iterator<ResultT>... taskProducers
+		Iterator<MessageT>... messageProducers
 	) {
-		this.taskProducers = taskProducers;
+		this.messageProducers = messageProducers;
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
 		this.waitForOtherTasksToFinishOnException = waitForOtherTasksToFinishOnException;
-		taskRunning = new boolean[taskProducers.length];
+		taskRunning = new boolean[messageProducers.length];
 	}
 
+	/**
+	 * Convenience function that constructs a new handler and passes it to
+	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
+	 * outboundObserver.setOnReadyHandler(...)}.
+	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, boolean, Iterator[])
+	 *     constructor for param descriptions
+	 */
 	@SafeVarargs
-	public static <ResultT> void copyWithFlowControl(
-		CallStreamObserver<ResultT> outboundObserver,
+	public static <MessageT> void copyWithFlowControl(
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
 		boolean waitForOtherTasksToFinishOnException,
-		Iterator<ResultT>... producers
+		Iterator<MessageT>... messageProducers
 	) {
 		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			taskExecutor,
 			waitForOtherTasksToFinishOnException,
-			producers
+			messageProducers
 		));
 	}
 
+	/**
+	 * Calls {@link #copyWithFlowControl(CallStreamObserver, Executor, boolean, Iterator[])
+	 * copyWithFlowControl(outboundObserver, taskExecutor, false, messageProducers)}.
+	 */
 	@SafeVarargs
-	public static <ResultT> void copyWithFlowControl(
-		CallStreamObserver<ResultT> outboundObserver,
+	public static <MessageT> void copyWithFlowControl(
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
-		Iterator<ResultT>... producers
+		Iterator<MessageT>... messageProducers
 	) {
-		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			outboundObserver,
-			taskExecutor,
-			false,
-			producers
-		));
+		copyWithFlowControl(outboundObserver, taskExecutor, false, messageProducers);
 	}
 
-	public static <ResultT> void copyWithFlowControl(
-		CallStreamObserver<ResultT> outboundObserver,
+	/**
+	 * Builds a message producing {@link Iterator} from {@code producerHasMoreMessagesIndicator} and
+	 * {@code messageProducer} and calls
+	 * {@link #copyWithFlowControl(CallStreamObserver, Executor, Iterator[])
+	 * copyWithFlowControl(outboundObserver, taskExecutor, builtIterator)}
+	 */
+	public static <MessageT> void copyWithFlowControl(
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
-		Supplier<Boolean> hasMoreResultsIndicator,
-		Supplier<ResultT> resultProducer
+		Supplier<Boolean> producerHasMoreMessagesIndicator,
+		Supplier<MessageT> messageProducer
 	) {
-		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+		copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
-			false,
 			new Iterator<>() {
-				@Override public boolean hasNext() { return hasMoreResultsIndicator.get(); }
-				@Override public ResultT next() { return resultProducer.get(); }
+				@Override public boolean hasNext() { return producerHasMoreMessagesIndicator.get();}
+				@Override public MessageT next() { return messageProducer.get(); }
 				@Override public String toString() { return "single"; }
 			}
-		));
+		);
 	}
 
 
 
+	/**
+	 * Calls {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, boolean, Iterator[])
+	 * this(}{@code outboundObserver, taskExecutor, waitForOtherTasksToFinishOnException,
+	 * }{@link #producerFunctionsToIterators(int, Function, Function, Function)
+	 * producerFunctionsToIterators(numberOfTasks, producerHasMoreMessagesIndicator,
+	 * messageProducer, messageProducerToString))}.
+	 */
 	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResultT> outboundObserver,
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
 		boolean waitForOtherTasksToFinishOnException,
 		int numberOfTasks,
-		Function<Integer, Boolean> taskHasMoreResultsIndicator,
-		Function<Integer, ResultT> taskResultProducer,
-		Function<Integer, String> taskToString
+		Function<Integer, Boolean> producerHasMoreMessagesIndicator,
+		Function<Integer, MessageT> messageProducer,
+		Function<Integer, String> messageProducerToString
 	) {
 		this(
 			outboundObserver,
 			taskExecutor,
 			waitForOtherTasksToFinishOnException,
 			producerFunctionsToIterators(
-					numberOfTasks, taskHasMoreResultsIndicator, taskResultProducer, taskToString)
+				numberOfTasks,
+				producerHasMoreMessagesIndicator,
+				messageProducer,
+				messageProducerToString
+			)
 		);
 	}
 
-	public static <ResultT> void copyWithFlowControl(
-		CallStreamObserver<ResultT> outboundObserver,
+	/**
+	 * Convenience function that constructs a new handler and passes it to
+	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
+	 * outboundObserver.setOnReadyHandler(...)}.
+	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, boolean, int, Function,
+	 *     Function, Function) constructor for param descriptions
+	 */
+	public static <MessageT> void copyWithFlowControl(
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
 		boolean waitForOtherTasksToFinishOnException,
 		int numberOfTasks,
-		Function<Integer, Boolean> taskHasMoreResultsIndicator,
-		Function<Integer, ResultT> taskResultProducer
+		Function<Integer, Boolean> producerHasMoreMessagesIndicator,
+		Function<Integer, MessageT> messageProducer
 	) {
 		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			taskExecutor,
 			waitForOtherTasksToFinishOnException,
 			numberOfTasks,
-			taskHasMoreResultsIndicator,
-			taskResultProducer,
+			producerHasMoreMessagesIndicator,
+			messageProducer,
 			Object::toString
 		));
 	}
 
-	public static <ResultT> void copyWithFlowControl(
-		CallStreamObserver<ResultT> outboundObserver,
+	/**
+	 * Calls
+	 * {@link #copyWithFlowControl(CallStreamObserver, Executor, boolean, int, Function, Function)
+	 * copyWithFlowControl(outboundObserver, taskExecutor, false, numberOfTasks,
+	 * producerHasMoreMessagesIndicator, messageProducer}.
+	 */
+	public static <MessageT> void copyWithFlowControl(
+		CallStreamObserver<MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		Function<Integer, Boolean> taskHasMoreResultsIndicator,
-		Function<Integer, ResultT> taskResultProducer
+		Function<Integer, Boolean> producerHasMoreMessagesIndicator,
+		Function<Integer, MessageT> messageProducer
 	) {
-		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+		copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
 			false,
 			numberOfTasks,
-			taskHasMoreResultsIndicator,
-			taskResultProducer,
-			Object::toString
-		));
+			producerHasMoreMessagesIndicator,
+			messageProducer
+		);
 	}
 
 
 
-	final CallStreamObserver<ResultT> outboundObserver;
+	final CallStreamObserver<MessageT> outboundObserver;
 	final Executor taskExecutor;
 	final boolean waitForOtherTasksToFinishOnException;
-	final Iterator<ResultT>[] taskProducers;
+	final Iterator<MessageT>[] messageProducers;
 
 	final boolean[] taskRunning;
 	final Object lock = new Object();
@@ -170,16 +222,16 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 
 
 	/**
-	 * For each task dispatches to {@code taskExecutor} a handler of a single cycle of readiness of
+	 * For each task dispatches a handler of a single cycle of readiness of
 	 * {@code outboundObserver}.
 	 */
 	public void run() {
 		synchronized (lock) {
-			if (completedTaskCount == taskProducers.length
+			if (completedTaskCount == messageProducers.length
 					|| (error != null && !waitForOtherTasksToFinishOnException)) {
 				return;
 			}
-			for (int taskNumber = 0; taskNumber < taskProducers.length; taskNumber++) {
+			for (int taskNumber = 0; taskNumber < messageProducers.length; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
@@ -198,13 +250,13 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 	class TaskOnReadyHandler implements Runnable {
 
 		final int taskNumber;
-		final Iterator<ResultT> taskProducer;
+		final Iterator<MessageT> taskProducer;
 
 
 
 		TaskOnReadyHandler(int taskNumber) {
 			this.taskNumber = taskNumber;
-			taskProducer = taskProducers[taskNumber];
+			taskProducer = messageProducers[taskNumber];
 		}
 
 
@@ -225,7 +277,7 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 				if ( !ready) {
 					taskRunning[taskNumber] = false;
 				} else synchronized (lock) {
-					if (++completedTaskCount < taskProducers.length) return;
+					if (++completedTaskCount < messageProducers.length) return;
 					// taskRunning[taskNumber] is left true to not respawn completed tasks
 					if (error == null) {
 						outboundObserver.onCompleted();
@@ -241,7 +293,7 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 								: Status.INTERNAL.withCause(throwable).asException();
 					}
 					if (!waitForOtherTasksToFinishOnException
-							|| ++completedTaskCount == taskProducers.length) {
+							|| ++completedTaskCount == messageProducers.length) {
 						outboundObserver.onError(error);
 					}
 				}
@@ -258,11 +310,16 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 
 
 
+	/**
+	 * Builds an array of length {@code numberOfTasks} of message producing {@link Iterator}s from
+	 * {@code producerHasMoreMessagesIndicator}, {@code messageProducer} and
+	 * {@code messageProducerToString} functions.
+	 */
 	public static <T> Iterator<T>[] producerFunctionsToIterators(
 		int numberOfTasks,
-		Function<Integer, Boolean> taskHasMoreResultsIndicator,
-		Function<Integer, T> taskResultProducer,
-		Function<Integer, String> taskToString
+		Function<Integer, Boolean> producerHasMoreMessagesIndicator,
+		Function<Integer, T> messageProducer,
+		Function<Integer, String> messageProducerToString
 	) {
 		@SuppressWarnings("unchecked")
 		Iterator<T>[] producers = new Iterator[numberOfTasks];
@@ -271,15 +328,15 @@ public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 			producers[taskNumber] = new Iterator<>() {
 
 				@Override public boolean hasNext() {
-					return !taskHasMoreResultsIndicator.apply(taskNumber);
+					return !producerHasMoreMessagesIndicator.apply(taskNumber);
 				}
 
 				@Override public T next() {
-					return taskResultProducer.apply(taskNumber);
+					return messageProducer.apply(taskNumber);
 				}
 
 				@Override public String toString() {
-					return taskToString.apply(taskNumber);
+					return messageProducerToString.apply(taskNumber);
 				}
 			};
 		}
