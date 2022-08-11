@@ -1,11 +1,13 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.util.Optional;
+import java.util.Iterator;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import io.grpc.Status.Code;
+import io.grpc.StatusException;
 import org.junit.*;
 
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
@@ -21,7 +23,7 @@ public class DispatchingOnReadyHandlerTest {
 
 	DispatchingOnReadyHandler<Integer> handler;
 
-	FakeOutboundObserver<Integer, ?> responseObserver;
+	FakeOutboundObserver<Integer, ?> outboundObserver;
 
 	/**
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response
@@ -34,21 +36,18 @@ public class DispatchingOnReadyHandlerTest {
 	 */
 	LoggingExecutor userExecutor;
 
-	int responseCount;
-	int[] responseCounters;
+	int resultCount;
+	int[] resultCounters;
 	Throwable caughtError;
-	int cleanupCount;
-	int[] cleanupCounters;
 
 
 
 	@Before
 	public void setup() {
-		responseCount = 0;
+		resultCount = 0;
 		caughtError = null;
-		cleanupCount = 0;
 		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 5);
-		responseObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
+		outboundObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
 		userExecutor = new LoggingExecutor("userExecutor", 5);
 	}
 
@@ -57,38 +56,31 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testSingleThread() throws InterruptedException {
 		final var numberOfResponses = 10;
-		responseObserver.outputBufferSize = 3;
-		responseObserver.unreadyDurationMillis = 5l;
+		outboundObserver.outputBufferSize = 3;
+		outboundObserver.unreadyDurationMillis = 5l;
 		handler = new DispatchingOnReadyHandler<>(
-			responseObserver,
+			outboundObserver,
 			userExecutor,
-			() -> responseCount >= numberOfResponses,
-			() -> ++responseCount,
-			(error) -> {
-				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
-				caughtError = error;
-				return Optional.of(error);
-			},
-			() -> {
-				log.fine("cleanup");
-				cleanupCount++;
+			false,
+			new Iterator<>() {
+				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
+				@Override public Integer next() { return ++resultCount; }
 			}
 		);
-		responseObserver.setOnReadyHandler(handler);
+		outboundObserver.setOnReadyHandler(handler);
 
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.runWithinListenerLock(handler);
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
+		outboundObserver.runWithinListenerLock(handler);
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertEquals("correct number of messages should be written",
-				numberOfResponses, responseObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
+				numberOfResponses, outboundObserver.getOutputData().size());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertNull("no exception should be thrown", caughtError);
-		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}
@@ -99,31 +91,23 @@ public class DispatchingOnReadyHandlerTest {
 	public void testMultiThread() throws InterruptedException {
 		final var responsesPerTasks = 5;
 		final var numberOfTasks = 5;
-		responseCounters = new int[numberOfTasks];
-		cleanupCounters = new int[numberOfTasks];
-		responseObserver.outputBufferSize = 3;
-		responseObserver.unreadyDurationMillis = 5l;
+		resultCounters = new int[numberOfTasks];
+		outboundObserver.outputBufferSize = 3;
+		outboundObserver.unreadyDurationMillis = 5l;
 		handler = new DispatchingOnReadyHandler<>(
-			responseObserver,
+			outboundObserver,
 			userExecutor,
+			false,
 			numberOfTasks,
-			(i) -> responseCounters[i] >= responsesPerTasks,
-			(i) -> ++responseCounters[i],
-			(i, error) -> {
-				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
-				caughtError = error;
-				return Optional.of(error);
-			},
-			(i) -> {
-				log.fine("cleanup");
-				cleanupCounters[i]++;
-			}
+			(i) -> resultCounters[i] >= responsesPerTasks,
+			(i) -> ++resultCounters[i],
+			Object::toString
 		);
-		responseObserver.setOnReadyHandler(handler);
+		outboundObserver.setOnReadyHandler(handler);
 
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.runWithinListenerLock(handler);
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
+		outboundObserver.runWithinListenerLock(handler);
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
@@ -131,13 +115,9 @@ public class DispatchingOnReadyHandlerTest {
 
 		assertEquals("correct number of messages should be written",
 				responsesPerTasks * numberOfTasks,
-				responseObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
+				outboundObserver.getOutputData().size());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertNull("no exception should be thrown", caughtError);
-		for (int i = 0; i < numberOfTasks; i++) {
-			assertEquals("cleanupHandler should be called 1 time for each thread (" + i + ')',
-					1, cleanupCounters[i]);
-		}
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}
@@ -147,44 +127,41 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testSecondHandlerIsNotSpawned() throws InterruptedException {
 		final var numberOfResponses = 10;
-		responseObserver.outputBufferSize = 3;
-		responseObserver.unreadyDurationMillis = 1l;
+		outboundObserver.outputBufferSize = 3;
+		outboundObserver.unreadyDurationMillis = 1l;
 		final var concurrencyGuard = new ReentrantLock();
 		handler = new DispatchingOnReadyHandler<>(
-			responseObserver,
+			outboundObserver,
 			userExecutor,
-			() -> responseCount >= numberOfResponses,
-			() -> {
-				if ( ! concurrencyGuard.tryLock()) {
-					final var error =  new AssertionError("another handler detected");
-					caughtError = error;  // in case exception handling is also broken
-					throw error;
+			false,
+			new Iterator<>() {
+
+				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
+
+				@Override public Integer next() {
+					if ( ! concurrencyGuard.tryLock()) {
+						final var error =  new AssertionError("another handler detected");
+						caughtError = error;  // in case exception handling is also broken
+						throw error;
+					}
+					try {
+						Thread.sleep(10l);
+					} catch (InterruptedException ignored) {
+					} finally {
+						concurrencyGuard.unlock();
+					}
+					return ++resultCount;
 				}
-				try {
-					Thread.sleep(10l);
-				} finally {
-					concurrencyGuard.unlock();
-				}
-				return ++responseCount;
-			},
-			(error) -> {
-				if (log.isLoggable(Level.FINE)) log.log(Level.FINE, "excp", error);
-				caughtError = error;
-				return Optional.of(error);
-			},
-			() -> {
-				log.fine("cleanup");
-				cleanupCount++;
 			}
 		);
-		responseObserver.setOnReadyHandler(handler);
+		outboundObserver.setOnReadyHandler(handler);
 
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.runWithinListenerLock(() -> {
+		outboundObserver.runWithinListenerLock(() -> {
 			handler.run();
 			handler.run();
 		});
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
@@ -192,9 +169,8 @@ public class DispatchingOnReadyHandlerTest {
 
 		assertNull("no exception should be thrown", caughtError);
 		assertEquals("correct number of messages should be written",
-				numberOfResponses, responseObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
-		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
+				numberOfResponses, outboundObserver.getOutputData().size());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
 	}
@@ -204,50 +180,58 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testExceptionIsHandledProperly() throws InterruptedException {
 		final var numberOfResponses = 5;
-		final var thrownException = new Exception();
-		responseObserver.outputBufferSize = 3;
-		responseObserver.unreadyDurationMillis = 5l;
+		final var thrownException = new RuntimeException();
+		outboundObserver.outputBufferSize = 3;
+		outboundObserver.unreadyDurationMillis = 5l;
 		handler = new DispatchingOnReadyHandler<>(
-			responseObserver,
+			outboundObserver,
 			userExecutor,
-			() -> responseCount >= numberOfResponses,
-			() -> {
-				if (responseCount > 2) {
-					caughtError = new AssertionError("processing should stop after exception");
+			false,
+			new Iterator<>() {
+
+				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
+
+				@Override public Integer next() {
+					if (resultCount > 2) {
+						caughtError = new AssertionError("processing should stop after exception");
+					}
+					if (resultCount == 2) throw thrownException;
+					return ++resultCount;
 				}
-				if (responseCount == 2) throw thrownException;
-				return ++responseCount;
-			},
-			(error) -> {
-				if (log.isLoggable(Level.FINE)) log.fine("exception " + error);
-				caughtError = error;
-				return Optional.of(error);
-			},
-			() -> {
-				log.fine("cleanup");
-				cleanupCount++;
 			}
 		);
-		responseObserver.setOnReadyHandler(handler);
+		outboundObserver.setOnReadyHandler(handler);
 
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.runWithinListenerLock(handler);
-		responseObserver.awaitFinalization(getRemainingMillis(startMillis));
+		outboundObserver.runWithinListenerLock(handler);
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
 		grpcInternalExecutor.shutdown();
 		userExecutor.shutdown();
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 		userExecutor.awaitTermination(getRemainingMillis(startMillis));
 
-		assertSame("thrownException should be passed to exceptionHandler",
-				thrownException, caughtError);
-		assertSame("thrownException should be passed to onError",
-				thrownException, responseObserver.reportedError);
+		assertTrue("reported exception should be a StatusException",
+				outboundObserver.reportedError instanceof StatusException);
+		assertSame("reported exception should be a StatusException",
+				((StatusException) outboundObserver.reportedError).getStatus().getCode(),
+				Code.INTERNAL);
+		assertSame("thrownException should be passed to onError as cause",
+				thrownException, outboundObserver.reportedError.getCause());
 		assertEquals("2 messages should be written",
-				2, responseObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", responseObserver.isFinalized());
-		assertEquals("cleanupHandler should be called 1 time", 1, cleanupCount);
+				2, outboundObserver.getOutputData().size());
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
+	}
+
+	@Test
+	public void testErrorIsReportedIfTheLastTaskThrows() throws InterruptedException {
+		//todo
+	}
+
+	@Test
+	public void testErrorIsReportedIfNonFinalTaskThrows() throws InterruptedException {
+		//todo
 	}
 
 

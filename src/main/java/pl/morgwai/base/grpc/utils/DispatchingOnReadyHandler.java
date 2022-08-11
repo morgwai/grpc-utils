@@ -1,14 +1,12 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.util.Iterator;
-import java.util.Optional;
-import java.util.concurrent.Callable;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
 
-import io.grpc.StatusRuntimeException;
+import io.grpc.*;
 import io.grpc.stub.CallStreamObserver;
 
 
@@ -19,375 +17,154 @@ import io.grpc.stub.CallStreamObserver;
  * {@link io.grpc.stub.StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)}, but work
  * is dispatched to the supplied executor and parallelized according to the supplied param.
  * <p>
- * Typical usage:</p>
+ * Typical usage in streaming-server methods:</p>
  * <pre>
  * public void myServerStreamingMethod(
  *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
  *     final var processor = new MyRequestProcessor(request, NUMBER_OF_TASKS);
  *     final var responseObserver =
  *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
- *     responseObserver.setOnCancelHandler(() -&gt; log.fine("client cancelled"));
- *     responseObserver.setOnReadyHandler(new DispatchingOnReadyHandler&lt;&gt;(
+ *     responseObserver.setOnCancelHandler(() -&gt; processor.cancel());
+ *     DispatchingOnReadyHandler.copyWithFlowControl(
  *         responseObserver,
  *         taskExecutor,
  *         NUMBER_OF_TASKS,
- *         (taskNumber) -&gt; processor.isCompleted(taskNumber),
- *         (taskNumber) -&gt; processor.produceNextResponseMessage(taskNumber),
- *         (taskNumber, error) -&gt; {
- *             processor.fail(error);  // interrupt other tasks
- *             if (error instanceof StatusRuntimeException) return Optional.empty();
- *             return Optional.of(Status.INTERNAL.asException());
- *         },
- *         (taskNumber) -&gt; processor.cleanup(i)
+ *         (taskNumber) -&gt; processor.hasMoreResults(taskNumber),
+ *         (taskNumber) -&gt; processor.produceNextResult(taskNumber)
  *     ));
  * }</pre>
  */
-public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
+public class DispatchingOnReadyHandler<ResultT> implements Runnable {
 
 
 
-	@FunctionalInterface
-	public interface ThrowingFunction<ParamT, ResultT> {
-		ResultT apply(ParamT param) throws Exception;
-	}
-
-
-
-	/**
-	 * Constructs a multi-threaded handler that includes exception handling.
-	 * If {@code exceptionHandler} applied to an exception thrown by {@code completionIndicator} or
-	 * {@code messageProducer} returns non-empty result, then it will be passed on to
-	 * {@code streamObserver.onError(...)}.
-	 */
+	@SafeVarargs
 	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
+		CallStreamObserver<ResultT> outboundObserver,
 		Executor taskExecutor,
-		int numberOfTasks,
-		ThrowingFunction<Integer, Boolean> completionIndicator,
-		ThrowingFunction<Integer, ResponseT> messageProducer,
-		BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler,
-		Consumer<Integer> cleanupHandler
+		boolean waitForOtherTasksToFinishOnError,
+		Iterator<ResultT>... producers
 	) {
-		this(streamObserver, taskExecutor, numberOfTasks);
-		this.completionIndicator = completionIndicator;
-		this.messageProducer = messageProducer;
-		this.exceptionHandler = exceptionHandler;
-		this.cleanupHandler = cleanupHandler;
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks,
-		ThrowingFunction<Integer, Boolean> completionIndicator,
-		ThrowingFunction<Integer, ResponseT> messageProducer,
-		BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler,
-		Consumer<Integer> cleanupHandler
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			numberOfTasks,
-			completionIndicator,
-			messageProducer,
-			exceptionHandler,
-			cleanupHandler
-		));
-	}
-
-
-
-	/**
-	 * Constructs a multi-threaded handler for "no-exception" case.
-	 * <p>
-	 * If {@link Error} or {@link RuntimeException} occurs, it will be passed on to
-	 * {@code streamObserver.onError(...)} (except for {@link StatusRuntimeException}) and re-thrown
-	 * (including {@link StatusRuntimeException}).</p>
-	 */
-	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks,
-		Function<Integer, Boolean> completionIndicator,
-		Function<Integer, ResponseT> messageProducer
-	) {
-		this(streamObserver, taskExecutor, numberOfTasks);
-		this.completionIndicator = completionIndicator::apply;
-		this.messageProducer = messageProducer::apply;
-		this.exceptionHandler = (taskNumber, excp) -> {
-			if ( ! (excp instanceof StatusRuntimeException)) {
-				synchronized (lock) {
-					streamObserver.onError(excp);
-				}
-			}
-			if (excp instanceof Error) throw (Error) excp;
-			if (excp instanceof RuntimeException) throw (RuntimeException) excp;
-			return Optional.empty();
-		};
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks,
-		Function<Integer, Boolean> completionIndicator,
-		Function<Integer, ResponseT> messageProducer
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			numberOfTasks,
-			completionIndicator,
-			messageProducer
-		));
-	}
-
-
-
-	/**
-	 * Similar to
-	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, Function, Function)}
-	 * but uses {@link Iterator} API instead of 2 {@link Function}s.
-	 */
-	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks,
-		Function<Integer, Iterator<ResponseT>> messageProducer
-	) {
-		this(
-			streamObserver,
-			taskExecutor,
-			numberOfTasks,
-			(taskNumber) -> !messageProducer.apply(taskNumber).hasNext(),
-			(taskNumber) -> messageProducer.apply(taskNumber).next()
-		);
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks,
-		Function<Integer, Iterator<ResponseT>> messageProducer
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			numberOfTasks,
-			messageProducer
-		));
-	}
-
-
-
-	/**
-	 * Constructs a single-threaded handler for "no-exception" case.
-	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, Function,
-	 * Function) multi-threaded version for details about exception handling
-	 */
-	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Supplier<Boolean> completionIndicator,
-		Supplier<ResponseT> messageProducer
-	) {
-		this(
-			streamObserver,
-			taskExecutor,
-			1,
-			(taskNumber) -> completionIndicator.get(),
-			(taskNumber) -> messageProducer.get()
-		);
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Supplier<Boolean> completionIndicator,
-		Supplier<ResponseT> messageProducer
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			completionIndicator,
-			messageProducer
-		));
-	}
-
-
-
-	/**
-	 * Similar to
-	 * {@link #DispatchingOnReadyHandler(CallStreamObserver, Executor, Supplier, Supplier)} but uses
-	 * {@link Iterator} API instead of 2 {@link Supplier}s.
-	 */
-	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Iterator<ResponseT> messageProducer
-	) {
-		this(
-			streamObserver,
-			taskExecutor,
-			1,
-			(taskNumber) -> !messageProducer.hasNext(),
-			(taskNumber) -> messageProducer.next()
-		);
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Iterator<ResponseT> messageProducer
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			messageProducer
-		));
-	}
-
-
-
-	/**
-	 * Constructs a single-thread handler that includes exception handling.
-	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, ThrowingFunction,
-	 * ThrowingFunction, BiFunction, Consumer) multi-threaded version for details about
-	 * exception handling
-	 */
-	public DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Callable<Boolean> completionIndicator,
-		Callable<ResponseT> messageProducer,
-		Function<Throwable, Optional<Throwable>> exceptionHandler,
-		Runnable cleanupHandler
-	) {
-		this(
-			streamObserver,
-			taskExecutor,
-			1,
-			(taskNumber) -> completionIndicator.call(),
-			(taskNumber) -> messageProducer.call(),
-			(taskNumber, excp) -> exceptionHandler.apply(excp),
-			(taskNumber) -> cleanupHandler.run()
-		);
-	}
-
-	public static <ResponseT> void copyWithFlowControl(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		Callable<Boolean> completionIndicator,
-		Callable<ResponseT> messageProducer,
-		Function<Throwable, Optional<Throwable>> exceptionHandler,
-		Runnable cleanupHandler
-	) {
-		streamObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
-			streamObserver,
-			taskExecutor,
-			completionIndicator,
-			messageProducer,
-			exceptionHandler,
-			cleanupHandler
-		));
-	}
-
-
-
-	/**
-	 * Constructor for those who prefer to override {@link #isCompleted(int)},
-	 * {@link #produceMessage(int)}, {@link #handleException(int, Throwable)} and
-	 * {@link #cleanup(int)} in a subclass instead of providing lambdas.
-	 */
-	protected DispatchingOnReadyHandler(
-		CallStreamObserver<ResponseT> streamObserver,
-		Executor taskExecutor,
-		int numberOfTasks
-	) {
-		this.streamObserver = streamObserver;
+		this.producers = producers;
+		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
-		this.numberOfTasks = numberOfTasks;
-		taskRunning = new boolean[numberOfTasks];
+		this.waitForOtherTasksToFinishOnError = waitForOtherTasksToFinishOnError;
+		taskRunning = new boolean[producers.length];
 	}
 
-	CallStreamObserver<ResponseT> streamObserver;
-	Executor taskExecutor;
-	int numberOfTasks;
-	boolean[] taskRunning;
+	@SafeVarargs
+	public static <ResultT> void copyWithFlowControl(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		boolean waitForOtherTasksToFinishOnError,
+		Iterator<ResultT>... producers
+	) {
+		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			outboundObserver,
+			taskExecutor,
+			waitForOtherTasksToFinishOnError,
+			producers
+		));
+	}
+
+	@SafeVarargs
+	public static <ResultT> void copyWithFlowControl(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		Iterator<ResultT>... producers
+	) {
+		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			outboundObserver,
+			taskExecutor,
+			false,
+			producers
+		));
+	}
+
+	public static <ResultT> void copyWithFlowControl(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		Supplier<Boolean> hasMoreResultsIndicator,
+		Supplier<ResultT> resultProducer
+	) {
+		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			outboundObserver,
+			taskExecutor,
+			false,
+			new Iterator<>() {
+				@Override public boolean hasNext() { return hasMoreResultsIndicator.get(); }
+				@Override public ResultT next() { return resultProducer.get(); }
+				@Override public String toString() { return "single"; }
+			}
+		));
+	}
+
+	public DispatchingOnReadyHandler(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		boolean waitForOtherTasksToFinishOnError,
+		int numberOfTasks,
+		Function<Integer, Boolean> taskHasMoreResultsIndicator,
+		Function<Integer, ResultT> taskResultProducer,
+		Function<Integer, String> taskToString
+	) {
+		this(
+			outboundObserver,
+			taskExecutor,
+			waitForOtherTasksToFinishOnError,
+			producerFunctionsToIterators(
+					numberOfTasks, taskHasMoreResultsIndicator, taskResultProducer, taskToString)
+		);
+	}
+
+	public static <ResultT> void copyWithFlowControl(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		boolean waitForOtherTasksToFinishOnError,
+		int numberOfTasks,
+		Function<Integer, Boolean> taskHasMoreResultsIndicator,
+		Function<Integer, ResultT> taskResultProducer
+	) {
+		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			outboundObserver,
+			taskExecutor,
+			waitForOtherTasksToFinishOnError,
+			numberOfTasks,
+			taskHasMoreResultsIndicator,
+			taskResultProducer,
+			Object::toString
+		));
+	}
+
+	public static <ResultT> void copyWithFlowControl(
+		CallStreamObserver<ResultT> outboundObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		Function<Integer, Boolean> taskHasMoreResultsIndicator,
+		Function<Integer, ResultT> taskResultProducer
+	) {
+		outboundObserver.setOnReadyHandler(new DispatchingOnReadyHandler<>(
+			outboundObserver,
+			taskExecutor,
+			false,
+			numberOfTasks,
+			taskHasMoreResultsIndicator,
+			taskResultProducer,
+			Object::toString
+		));
+	}
+
+
+
+	final Iterator<ResultT>[] producers;
+	final CallStreamObserver<ResultT> outboundObserver;
+	final Executor taskExecutor;
+	final boolean waitForOtherTasksToFinishOnError;
+
+	Throwable error;
+	final boolean[] taskRunning;
 	final Object lock = new Object();
-
-	AtomicInteger completionCount = new AtomicInteger(0);
-	boolean errorReported = false;
-
-
-
-	/**
-	 * Indicates if the task {@code i} is completed.
-	 * Default implementation calls {@link #completionIndicator}.
-	 */
-	protected boolean isCompleted(int taskNumber) throws Exception {
-		return completionIndicator.apply(taskNumber);
-	}
-
-	/**
-	 * Called by {@link #isCompleted(int)}.
-	 */
-	protected ThrowingFunction<Integer, Boolean> completionIndicator;
-
-
-
-	/**
-	 * Asks task {@code i} to produce a next message.
-	 * Default implementation calls {@link #messageProducer}.
-	 */
-	protected ResponseT produceMessage(int taskNumber) throws Exception {
-		return messageProducer.apply(taskNumber);
-	}
-
-	/**
-	 * Called by {@link #produceMessage(int)}.
-	 */
-	protected ThrowingFunction<Integer, ResponseT> messageProducer;
-
-
-
-	/**
-	 * Handles exception thrown by task {@code i}.
-	 * Default implementation calls {@link #exceptionHandler}.
-	 */
-	protected Optional<Throwable> handleException(int taskNumber, Throwable excp) {
-		return exceptionHandler.apply(taskNumber, excp);
-	}
-
-	/**
-	 * Called by {@link #handleException(int, Throwable)}.
-	 */
-	protected BiFunction<Integer, Throwable, Optional<Throwable>> exceptionHandler;
-
-
-
-	/**
-	 * Cleans up after task {@code i} is completed.
-	 * Default implementation calls {@link #cleanupHandler}.
-	 */
-	protected void cleanup(int taskNumber) {
-		if (cleanupHandler != null) cleanupHandler.accept(taskNumber);
-	}
-
-	/**
-	 * Called by {@link #cleanup(int)}.
-	 */
-	protected Consumer<Integer> cleanupHandler;
-
-
-
-	/**
-	 * Sets handler to obtain String representation of task {@code i} for logging purposes.
-	 */
-	public void setTaskToStringHandler(Function<Integer, String> taskToStringHandler) {
-		this.taskToStringHandler = taskToStringHandler;
-	}
-	Function<Integer, String> taskToStringHandler;
+	final AtomicInteger completedTaskCount = new AtomicInteger(0);
 
 
 
@@ -396,46 +173,52 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 	 */
 	public void run() {
 		synchronized (lock) {
-			if (errorReported) return;
-			for (int taskNumber = 0; taskNumber < numberOfTasks; taskNumber++) {
+			if (error != null && !waitForOtherTasksToFinishOnError) return;
+			for (int taskNumber = 0; taskNumber < producers.length; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
 				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
 				if (taskRunning[taskNumber]) continue;
 				taskRunning[taskNumber] = true;
-				taskExecutor.execute(new SingleReadinessCycleHandlerTask(taskNumber));
+				taskExecutor.execute(new OnReadyHandlerTask(taskNumber));
 			}
 		}
 	}
 
 
 
-	class SingleReadinessCycleHandlerTask implements Runnable {
+	class OnReadyHandlerTask implements Runnable {
 
 		final int taskNumber;
+		final Iterator<ResultT> taskProducer;
 
-		SingleReadinessCycleHandlerTask(int taskNumber) { this.taskNumber = taskNumber; }
+
+
+		OnReadyHandlerTask(int taskNumber) {
+			this.taskNumber = taskNumber;
+			taskProducer = producers[taskNumber];
+		}
 
 
 
 		@Override public void run() {
 			var ready = true;
 			try {
-				if ( !isCompleted(taskNumber)) {
+				if (taskProducer.hasNext()) {
 					synchronized (lock) {
-						ready = streamObserver.isReady();
+						ready = outboundObserver.isReady();
 						if ( !ready) {
 							taskRunning[taskNumber] = false;
 							return;
 						}
 					}
 					do {
-						final var responseMessage = produceMessage(taskNumber);
-						final var completed = isCompleted(taskNumber);
+						final var result = taskProducer.next();
+						final var completed = !taskProducer.hasNext();
 						synchronized (lock) {
-							streamObserver.onNext(responseMessage);
+							outboundObserver.onNext(result);
 							if (completed) break; // no need to check isReady, break immediately
-							ready = streamObserver.isReady();
+							ready = outboundObserver.isReady();
 							if ( !ready) {
 								taskRunning[taskNumber] = false;
 								return;
@@ -443,33 +226,66 @@ public class DispatchingOnReadyHandler<ResponseT> implements Runnable {
 						}
 					} while (true); // completed/unready cause break/return, no need for extra check
 				}
-				if (completionCount.incrementAndGet() == numberOfTasks) {
+				if (completedTaskCount.incrementAndGet() == producers.length) {
 					synchronized (lock) {
-						streamObserver.onCompleted();
+						if (error == null) {
+							outboundObserver.onCompleted();
+						} else {
+							outboundObserver.onError(error);
+						}
 					}
 				}
 				// taskRunning[taskNumber] is left true to not respawn completed tasks
 			} catch (Throwable throwable) {
-				final var handlingResult = handleException(taskNumber, throwable);
-				if (handlingResult.isEmpty()) return;
-				final var toReport = handlingResult.get();
 				synchronized (lock) {
-					if ( !errorReported) {
-						streamObserver.onError(toReport);
-						errorReported = true;
+					if (error == null) {
+						error = throwable instanceof StatusRuntimeException
+								? throwable
+								: Status.INTERNAL.withCause(throwable).asException();
+					}
+					if (!waitForOtherTasksToFinishOnError
+							|| completedTaskCount.incrementAndGet() == producers.length) {
+						outboundObserver.onError(error);
 					}
 				}
-			} finally {
-				if (ready) cleanup(taskNumber);  // only call on exception or completion
+				throw throwable;
 			}
 		}
 
 
 
 		@Override public String toString() {
-			return taskToStringHandler != null
-					? taskToStringHandler.apply(taskNumber)
-					: "onReadyHandler-task-" + taskNumber;
+			return "onReadyHandlerTask-" + taskProducer;
 		}
+	}
+
+
+
+	public static <T> Iterator<T>[] producerFunctionsToIterators(
+		int numberOfTasks,
+		Function<Integer, Boolean> taskHasMoreResultsIndicator,
+		Function<Integer, T> taskResultProducer,
+		Function<Integer, String> taskToString
+	) {
+		@SuppressWarnings("unchecked")
+		Iterator<T>[] producers = new Iterator[numberOfTasks];
+		for (var i = 0; i < numberOfTasks; i++) {
+			final var taskNumber = i;
+			producers[taskNumber] = new Iterator<>() {
+
+				@Override public boolean hasNext() {
+					return !taskHasMoreResultsIndicator.apply(taskNumber);
+				}
+
+				@Override public T next() {
+					return taskResultProducer.apply(taskNumber);
+				}
+
+				@Override public String toString() {
+					return taskToString.apply(taskNumber);
+				}
+			};
+		}
+		return producers;
 	}
 }

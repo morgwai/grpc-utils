@@ -505,6 +505,7 @@ public abstract class ConcurrentInboundObserverTest {
 				final var onReadyHandler = new DispatchingOnReadyHandler<>(
 					individualObserver,
 					userExecutor,
+					false,
 					tasksPerMessage,
 					(i) -> resultCounters[i] >= resultsPerTask,
 					(i) -> {
@@ -517,12 +518,8 @@ public abstract class ConcurrentInboundObserverTest {
 						}
 						resultCounters[i]++;
 						return new OutboundMessage(inboundMessage.id);
-					}
-				);
-				onReadyHandler.setTaskToStringHandler((i) ->
-					"onReadyHandler: { inboundMessageId: " + inboundMessage.id
-					+ ", task: " + i
-					+ ", resultNo: " + resultCounters[i] + " }"
+					},
+					Object::toString
 				);
 				individualObserver.setOnReadyHandler(onReadyHandler);
 			},
