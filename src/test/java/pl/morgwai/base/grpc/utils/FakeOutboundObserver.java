@@ -312,15 +312,12 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 	/**
-	 * todo: update
-	 * Sets up delivery of request messages from {@code inboundMessageProducer} to
-	 * {@code inboundObserver} (test subject) whenever {@link #request(int)} method is called.<br/>
-	 * Also delivers messages for all accumulated {@link #request(int)} calls that happened before
-	 * this method was called.
-	 * <p>
-	 * Note: this method is exposed for low level testing of stand-alone request observers. It is
-	 * automatically called by {@link #callWithinListenerLock(Function, Consumer)} which should be
-	 * used for normal gRPC method testing.</p>
+	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
+	 * {@code inboundObserver} (test subject), delivers the initial call to {@link #onReadyHandler}
+	 * and to {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)} if
+	 * {@code inboundObserver} is a {@link ClientResponseObserver}.<br/>
+	 * Next, delivers messages for all accumulated {@link #request(int)} calls that happened
+	 * before this method was called.
 	 */
 	@SuppressWarnings("unchecked")
 	<InboundT> void startMessageDelivery(
