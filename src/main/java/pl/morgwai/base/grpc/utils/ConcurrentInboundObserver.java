@@ -46,8 +46,8 @@ import io.grpc.stub.*;
  * {@link #onInboundMessage(Object, CallStreamObserver)} may pass its individual observer to
  * utilities like {@link StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)} in case
  * of sequential processing or
- * {@link DispatchingOnReadyHandler#copyWithFlowControl(CallStreamObserver, Executor, Iterator)} in
- * case work needs to be dispatched to other threads.</p>
+ * {@link DispatchingOnReadyHandler#copyWithFlowControl(CallStreamObserver, Executor, Iterator[])}
+ * in case work needs to be dispatched to other threads.</p>
  *
  * @see OrderedConcurrentInboundObserver
  */
