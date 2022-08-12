@@ -11,7 +11,7 @@ import io.grpc.stub.ClientResponseObserver;
 
 
 /**
- * Response observer for a client side that blocks until response is completed with either
+ * A {@link ClientResponseObserver}, that blocks until response is completed with either
  * {@link #onCompleted()} or {@link #onError(Throwable)}.
  * <p>
  * Typical usage:</p>

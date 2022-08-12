@@ -14,12 +14,13 @@ import io.grpc.stub.*;
 
 /**
  * Base class for inbound {@link StreamObserver}s ({@link #ConcurrentInboundObserver(
- * CallStreamObserver, int, BiConsumer, BiConsumer, ServerCallStreamObserver) request observers} for
- * server RPC method implementations and {@link #ConcurrentInboundObserver(CallStreamObserver, int,
- * BiConsumer, BiConsumer, Consumer) client response observers} for nested or chained calls) that
- * may dispatch message processing to multiple threads: handles all the synchronization and manual
- * flow-control. This prevents excessive buffering while maintaining the number of messages
- * processed concurrently configured with {@code maxConcurrentMessages} constructor param.
+ * CallStreamObserver, int, BiConsumer, BiConsumer, ServerCallStreamObserver) server request
+ * observers} for RPC method implementations and
+ * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer, Consumer)
+ * client response observers} for nested or chained calls), that may dispatch message processing to
+ * multiple threads: handles all the synchronization and manual flow-control. This prevents
+ * excessive buffering while maintaining the number of messages processed concurrently configured
+ * with {@code maxConcurrentMessages} constructor param.
  * <p>
  * If work is not dispatched to other threads, then processing of inbound messages will be
  * sequential and performed with respect to flow-control. {@code maxConcurrentMessages} constructor

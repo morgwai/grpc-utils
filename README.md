@@ -9,16 +9,16 @@ Some helpful classes when developing gRPC services.<br/>
 ## MAIN USER CLASSES
 
 ### [DispatchingOnReadyHandler](src/main/java/pl/morgwai/base/grpc/utils/DispatchingOnReadyHandler.java)
-Streams messages to a `CallStreamObserver` from multiple threads with respect to flow-control to ensure that no excessive buffering occurs.
+Streams messages to an outbound `CallStreamObserver` from multiple sources in separate threads with respect to flow-control. Useful in sever methods when 1 request message can result in multiple response messages that can be produced concurrently in separate tasks.
 
-### [ConcurrentRequestObserver](src/main/java/pl/morgwai/base/grpc/utils/ConcurrentRequestObserver.java)
-A request `StreamObserver` for bi-di streaming methods that dispatch work to multiple threads and don't care about the order of responses. Handles all the synchronization and manual flow control to maintain desired level of concurrency and prevent excessive buffering.
+### [ConcurrentInboundObserver](src/main/java/pl/morgwai/base/grpc/utils/ConcurrentInboundObserver.java)
+Base class for inbound `StreamObserver`s (server request observers for RPC method implementations and client response observers for nested or chained calls), that may dispatch message processing to multiple threads: handles all the synchronization and manual flow-control.
 
-### [OrderedConcurrentRequestObserver](src/main/java/pl/morgwai/base/grpc/utils/OrderedConcurrentRequestObserver.java)
-A `ConcurrentRequestObserver` that uses [OrderedConcurrentOutputBuffer](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/concurrent/OrderedConcurrentOutputBuffer.java) to automatically ensure that response messages are sent in order corresponding to request messages order.
+### [OrderedConcurrentInboundObserver](src/main/java/pl/morgwai/base/grpc/utils/OrderedConcurrentInboundObserver.java)
+A `ConcurrentInboundObserver` that uses [OrderedConcurrentOutputBuffer](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/concurrent/OrderedConcurrentOutputBuffer.java) to ensure that outbound messages are sent in the order corresponding to the inbound messages order.
 
 ### [BlockingResponseObserver](src/main/java/pl/morgwai/base/grpc/utils/BlockingResponseObserver.java)
-A response observer for a client side that blocks until response is completed with either `onCompleted()` or `onError(error)`.
+A `ClientResponseObserver`, that blocks until response is completed with either `onCompleted()` or `onError(error)`.
 
 
 ## EXAMPLES
