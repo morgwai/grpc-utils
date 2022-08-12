@@ -43,7 +43,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 		final ResponseMessage[] inputData = new ResponseMessage[10];
 		final var worker = new Thread(() -> {
 			try {
-				Thread.sleep(10l);
+				Thread.sleep(10L);
 			} catch (InterruptedException ignored) {}
 			for (int i = 0; i < inputData.length; i++) {
 				inputData[i] = new ResponseMessage(i);
@@ -53,8 +53,8 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 		});
 
 		worker.start();
-		responseObserver.awaitCompletion(50l);
-		worker.join(10l);
+		responseObserver.awaitCompletion(50L);
+		worker.join(10L);
 
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 		assertEquals("all input messages should be received",
@@ -72,19 +72,19 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 		final Exception reportedError = new Exception();
 		final var worker = new Thread(() -> {
 			try {
-				Thread.sleep(10l);
+				Thread.sleep(10L);
 			} catch (InterruptedException ignored) {}
 			responseObserver.onError(reportedError);
 		});
 
 		worker.start();
 		try {
-			responseObserver.awaitCompletion(50l);
+			responseObserver.awaitCompletion(50L);
 			fail("ErrorReportedException should be thrown");
 		} catch (ErrorReportedException | InterruptedException e) {
 			assertSame("reported error should be caught", reportedError, e.getCause());
 		}
-		worker.join(10l);
+		worker.join(10L);
 
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 	}
@@ -95,7 +95,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 	public void testTimeout() throws InterruptedException, ErrorReportedException {
 		final var worker = new Thread(() -> {
 			try {
-				Thread.sleep(20l);
+				Thread.sleep(20L);
 			} catch (InterruptedException ignored) {}
 			synchronized (responseObserver) {
 				responseObserver.notifyAll();
@@ -104,11 +104,11 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 		worker.start();
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.awaitCompletion(50l);
+		responseObserver.awaitCompletion(50L);
 
-		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50l);
+		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50L);
 		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
-		worker.join(10l);
+		worker.join(10L);
 	}
 
 
@@ -117,7 +117,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 	public void completedBeforeAwait() throws InterruptedException, ErrorReportedException {
 		responseObserver.onCompleted();
 
-		responseObserver.awaitCompletion(1l);
+		responseObserver.awaitCompletion(1L);
 
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 	}
@@ -144,7 +144,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 	static class ResponseMessage {
 
-		int id;
+		final int id;
 
 		public ResponseMessage(int id) { this.id = id; }
 

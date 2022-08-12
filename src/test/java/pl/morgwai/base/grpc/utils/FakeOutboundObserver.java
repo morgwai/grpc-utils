@@ -76,7 +76,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	/**
 	 * Duration for which observer will be unready. By default 1ms.
 	 */
-	public volatile long unreadyDurationMillis = 1l;
+	public volatile long unreadyDurationMillis = 1L;
 
 
 
@@ -290,7 +290,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 	public static long getRemainingMillis(long startMillis, long timeoutMillis) {
-		return Math.max(1l, timeoutMillis + startMillis - System.currentTimeMillis());
+		return Math.max(1L, timeoutMillis + startMillis - System.currentTimeMillis());
 	}
 
 
@@ -572,7 +572,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		 * List of all rejected tasks.
 		 */
 		public List<Runnable> getRejectedTasks() { return rejectedTasks; }
-		List<Runnable> rejectedTasks = new LinkedList<>();
+		final List<Runnable> rejectedTasks = new LinkedList<>();
 
 		public String getName() { return name; }
 		final String name;
@@ -580,7 +580,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 		public LoggingExecutor(String name, int poolSize) {
-			super(poolSize, poolSize, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+			super(poolSize, poolSize, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
 			this.name = name;
 			setRejectedExecutionHandler((task, executor) -> {
 				log.log(Level.SEVERE, name + " rejected " + task, new Exception());
@@ -645,7 +645,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	@SuppressWarnings("serial")
 	static class LoggingReentrantLock extends ReentrantLock {
 
-		List<String> labels = new LinkedList<>();
+		final List<String> labels = new LinkedList<>();
 
 		public boolean tryLock(String label) {
 			boolean result = tryLock();

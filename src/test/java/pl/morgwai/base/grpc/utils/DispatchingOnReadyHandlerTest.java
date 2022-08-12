@@ -59,7 +59,7 @@ public class DispatchingOnReadyHandlerTest {
 	public void testSingleThread() throws InterruptedException {
 		final var numberOfResponses = 10;
 		outboundObserver.outputBufferSize = 3;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
@@ -94,7 +94,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var numberOfTasks = 5;
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 3;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
@@ -128,7 +128,7 @@ public class DispatchingOnReadyHandlerTest {
 	public void testDuplicateTaskHandlerIsNotSpawned() throws InterruptedException {
 		final var numberOfResponses = 10;
 		outboundObserver.outputBufferSize = 3;
-		outboundObserver.unreadyDurationMillis = 1l;
+		outboundObserver.unreadyDurationMillis = 1L;
 		final var concurrencyGuard = new ReentrantLock();
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
@@ -145,7 +145,7 @@ public class DispatchingOnReadyHandlerTest {
 						throw error;
 					}
 					try {
-						Thread.sleep(10l);
+						Thread.sleep(10L);
 					} catch (InterruptedException ignored) {
 					} finally {
 						concurrencyGuard.unlock();
@@ -184,7 +184,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var thrownException = new RuntimeException("test exception");
 		final var messageNumberToThrowAfter = 2;
 		outboundObserver.outputBufferSize = 2;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
@@ -240,7 +240,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var messageNumberToThrowAfter = 2;
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
@@ -305,7 +305,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var otherTasksCompleted = new CountDownLatch(numberOfTasks - 1);
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		final var startMillis = System.currentTimeMillis();
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
@@ -379,7 +379,7 @@ public class DispatchingOnReadyHandlerTest {
 		final var messageNumberToThrowAfter = 2;
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5l;
+		outboundObserver.unreadyDurationMillis = 5L;
 		handler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,

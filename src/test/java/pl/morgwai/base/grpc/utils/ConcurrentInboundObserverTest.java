@@ -26,7 +26,7 @@ public abstract class ConcurrentInboundObserverTest {
 	/**
 	 * Timeout for single-threaded, no-processing-delay operations.
 	 */
-	public static final long TIMEOUT_MILLIS = 500l;
+	public static final long TIMEOUT_MILLIS = 500L;
 
 
 
@@ -75,7 +75,7 @@ public abstract class ConcurrentInboundObserverTest {
 			this.maxMessageDeliveryDelayMillis = maxMessageDeliveryDelayMillis;
 		}
 
-		InboundMessageProducer(int numberOfMessages) { this(numberOfMessages, 0l); }
+		InboundMessageProducer(int numberOfMessages) { this(numberOfMessages, 0L); }
 
 
 
@@ -85,7 +85,7 @@ public abstract class ConcurrentInboundObserverTest {
 			if (messageIdSequence >= numberOfMessages) return;
 
 			// deliver the next message immediately or after a slight delay
-			if (maxMessageDeliveryDelayMillis > 0l) {
+			if (maxMessageDeliveryDelayMillis > 0L) {
 				try {
 					Thread.sleep(messageIdSequence % (maxMessageDeliveryDelayMillis + 1));
 				} catch (InterruptedException ignored) {}
@@ -147,7 +147,7 @@ public abstract class ConcurrentInboundObserverTest {
 			throws InterruptedException {
 		final var numberOfMessages = 15;
 		outboundObserver.outputBufferSize = 4;
-		outboundObserver.unreadyDurationMillis = 3l;
+		outboundObserver.unreadyDurationMillis = 3L;
 		final var testSubject = newConcurrentInboundObserver(
 			1,
 			(inboundMessage, individualObserver) -> {
@@ -232,7 +232,7 @@ public abstract class ConcurrentInboundObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
-				if (getRemainingMillis(startMillis) <= 1l) break;
+				if (getRemainingMillis(startMillis) <= 1L) break;
 			}
 		}
 		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
@@ -273,7 +273,7 @@ public abstract class ConcurrentInboundObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
-				if (getRemainingMillis(startMillis) <= 1l) break;
+				if (getRemainingMillis(startMillis) <= 1L) break;
 			}
 		}
 		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
@@ -314,7 +314,7 @@ public abstract class ConcurrentInboundObserverTest {
 		synchronized (exceptionThrownHolder) {
 			while (exceptionThrownHolder[0] == null) {
 				exceptionThrownHolder.wait(getRemainingMillis(startMillis));
-				if (getRemainingMillis(startMillis) <= 1l) break;
+				if (getRemainingMillis(startMillis) <= 1L) break;
 			}
 		}
 		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
@@ -330,8 +330,8 @@ public abstract class ConcurrentInboundObserverTest {
 	@Test
 	public void testAsyncSequentialProcessingOf40Messages() throws InterruptedException {
 		outboundObserver.outputBufferSize = 6;
-		outboundObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(40, 3l, 4l, 1, 1, 2000l);
+		outboundObserver.unreadyDurationMillis = 3L;
+		testAsyncProcessing(40, 3L, 4L, 1, 1, 2000L);
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				outboundObserver.getOutputData(), outboundMessageComparator));
 	}
@@ -339,8 +339,8 @@ public abstract class ConcurrentInboundObserverTest {
 	@Test
 	public void testAsyncProcessingOf100MessagesIn5Threads() throws InterruptedException {
 		outboundObserver.outputBufferSize = 13;
-		outboundObserver.unreadyDurationMillis = 3;
-		testAsyncProcessing(100, 3l, 4l, 3, 5, 2000l);
+		outboundObserver.unreadyDurationMillis = 3L;
+		testAsyncProcessing(100, 3L, 4L, 3, 5, 2000L);
 	}
 
 	void testAsyncProcessing(
@@ -352,7 +352,7 @@ public abstract class ConcurrentInboundObserverTest {
 		final long timeoutMillis
 	) throws InterruptedException {
 		final var userExecutor = new LoggingExecutor("userExecutor", maxConcurrentMessages);
-		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
+		final var halfProcessingDelay = maxProcessingDelayMillis / 2L;
 		final var testSubject = newConcurrentInboundObserver(
 			maxConcurrentMessages,
 			(inboundMessage, individualObserver) -> {
@@ -413,7 +413,7 @@ public abstract class ConcurrentInboundObserverTest {
 		final var numberOfMessages = 2;
 		final int resultsPerMessage = 2;
 		outboundObserver.outputBufferSize = numberOfMessages * resultsPerMessage - 1;
-		outboundObserver.unreadyDurationMillis = 1l;
+		outboundObserver.unreadyDurationMillis = 1L;
 		final var testSubject = newConcurrentInboundObserver(
 			1,
 			(inboundMessage, individualObserver) -> {
@@ -473,8 +473,8 @@ public abstract class ConcurrentInboundObserverTest {
 	@Test
 	public void testDispatchingOnReadyHandlerIntegrationSingleThread() throws InterruptedException {
 		outboundObserver.outputBufferSize = 6;
-		outboundObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(10, 0l, 0l, 1, 10, 1, 2, 2000l);
+		outboundObserver.unreadyDurationMillis = 3L;
+		testDispatchingOnReadyHandlerIntegration(10, 0L, 0L, 1, 10, 1, 2, 2000L);
 		assertTrue("messages should be written in order",
 				Comparators.isInOrder(outboundObserver.getOutputData(), outboundMessageComparator));
 	}
@@ -482,8 +482,8 @@ public abstract class ConcurrentInboundObserverTest {
 	@Test
 	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
 		outboundObserver.outputBufferSize = 6;
-		outboundObserver.unreadyDurationMillis = 3l;
-		testDispatchingOnReadyHandlerIntegration(20, 3l, 4l, 3, 5, 3, 5, 2000l);
+		outboundObserver.unreadyDurationMillis = 3L;
+		testDispatchingOnReadyHandlerIntegration(20, 3L, 4L, 3, 5, 3, 5, 2000L);
 	}
 
 	void testDispatchingOnReadyHandlerIntegration(
@@ -496,7 +496,7 @@ public abstract class ConcurrentInboundObserverTest {
 		final int executorThreads,
 		final long timeoutMillis
 	) throws InterruptedException {
-		final var halfProcessingDelay = maxProcessingDelayMillis / 2;
+		final var halfProcessingDelay = maxProcessingDelayMillis / 2L;
 		final var userExecutor = new LoggingExecutor("userExecutor", executorThreads);
 		final var testSubject = newConcurrentInboundObserver(
 			maxConcurrentMessages,
@@ -509,7 +509,7 @@ public abstract class ConcurrentInboundObserverTest {
 					tasksPerMessage,
 					(i) -> resultCounters[i] < resultsPerTask,
 					(i) -> {
-						if (halfProcessingDelay > 0) {
+						if (halfProcessingDelay > 0L) {
 							final var processingDelay = halfProcessingDelay +
 								((inboundMessage.id + resultCounters[i]) % halfProcessingDelay);
 							try {
@@ -564,7 +564,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 	public static long getRemainingMillis(long startMillis, long timeoutMillis) {
-		return Math.max(1l, timeoutMillis + startMillis - System.currentTimeMillis());
+		return Math.max(1L, timeoutMillis + startMillis - System.currentTimeMillis());
 	}
 
 	public static long getRemainingMillis(long startMillis) {
@@ -601,7 +601,7 @@ public abstract class ConcurrentInboundObserverTest {
 		}
 	}
 
-	static Comparator<OutboundMessage> outboundMessageComparator =
+	static final Comparator<OutboundMessage> outboundMessageComparator =
 			Comparator.comparingInt(msg -> msg.inboundId);
 
 
