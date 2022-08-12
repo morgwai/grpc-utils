@@ -507,7 +507,7 @@ public abstract class ConcurrentInboundObserverTest {
 					userExecutor,
 					false,
 					tasksPerMessage,
-					(i) -> resultCounters[i] >= resultsPerTask,
+					(i) -> resultCounters[i] < resultsPerTask,
 					(i) -> {
 						if (halfProcessingDelay > 0) {
 							final var processingDelay = halfProcessingDelay +

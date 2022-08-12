@@ -65,6 +65,8 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	public List<OutboundT> getOutputData() { return outputData; }
 	final List<OutboundT> outputData = new LinkedList<>();
 
+	final AtomicInteger messagesAfterFinalizationCount = new AtomicInteger(0);
+
 	/**
 	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
 	 * submitted to it. Default is <code>0</code> which means always ready.
@@ -141,6 +143,11 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
+			if (finalized) {
+				messagesAfterFinalizationCount.incrementAndGet();
+				throw new IllegalStateException("already finalized");
+			}
+
 			// Currently, the behavior of "the real" responseObserver is inconsistent and depends
 			// on which thread onNext() is called on.
 			// See https://github.com/grpc/grpc-java/issues/8409
@@ -215,6 +222,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	public boolean isFinalized() { return finalized; }
 	boolean finalized = false;
 	final CountDownLatch finalizationGuard = new CountDownLatch(1);
+	final AtomicInteger extraFinalizationCount = new AtomicInteger(0);
 
 
 
@@ -226,7 +234,10 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		try {
 			log.fine("response completed");
 			synchronized (finalizationGuard) {
-				if (finalized) throw new IllegalStateException("multiple finalizations");
+				if (finalized) {
+					extraFinalizationCount.incrementAndGet();
+					throw new IllegalStateException("multiple finalizations");
+				}
 				finalized = true;
 			}
 		} finally {
@@ -594,9 +605,12 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 					if (log.isLoggable(Level.FINER)) {
 						log.finer(name + " starting " + taskId + ": " + task);
 					}
-					task.run();
-					if (log.isLoggable(Level.FINER)) {
-						log.finer(name + " completed " + taskId + ": " + task);
+					try {
+						task.run();
+					} finally {
+						if (log.isLoggable(Level.FINER)) {
+							log.finer(name + " completed " + taskId + ": " + task);
+						}
 					}
 				}
 

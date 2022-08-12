@@ -264,21 +264,26 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		@Override public void run() {
 			try {
 				boolean ready;
+				boolean aborted;  // other task has thrown unexpected error in no-wait mode
 				synchronized (lock) {
 					ready = outboundObserver.isReady();
+					aborted = error != null && !waitForOtherTasksToFinishOnException;
 				}
-				while (ready && taskProducer.hasNext()) {
+				while (ready && !aborted && taskProducer.hasNext()) {
 					final var result = taskProducer.next();
 					synchronized (lock) {
-						outboundObserver.onNext(result);
+						aborted = error != null && !waitForOtherTasksToFinishOnException;
+						if ( !aborted) outboundObserver.onNext(result);
 						ready = outboundObserver.isReady();
 					}
 				}
 				if ( !ready) {
 					taskRunning[taskNumber] = false;
-				} else synchronized (lock) {
+					return;
+				}
+				// taskRunning[taskNumber] will be left true to not respawn completed/aborted tasks
+				if ( !aborted) synchronized (lock) {
 					if (++completedTaskCount < messageProducers.length) return;
-					// taskRunning[taskNumber] is left true to not respawn completed tasks
 					if (error == null) {
 						outboundObserver.onCompleted();
 					} else {
@@ -292,12 +297,13 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 								? throwable
 								: Status.INTERNAL.withCause(throwable).asException();
 					}
-					if (!waitForOtherTasksToFinishOnException
+					if ( !waitForOtherTasksToFinishOnException
 							|| ++completedTaskCount == messageProducers.length) {
 						outboundObserver.onError(error);
 					}
 				}
 				throw throwable;
+				// taskRunning[taskNumber] is left true to not respawn aborted tasks
 			}
 		}
 
@@ -328,7 +334,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 			producers[taskNumber] = new Iterator<>() {
 
 				@Override public boolean hasNext() {
-					return !producerHasMoreMessagesIndicator.apply(taskNumber);
+					return producerHasMoreMessagesIndicator.apply(taskNumber);
 				}
 
 				@Override public T next() {
