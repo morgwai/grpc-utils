@@ -1,8 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -564,7 +563,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 	/**
-	 * Logs task scheduling and executions and scheduling rejections.
+	 * Logs task scheduling and executions, scheduling rejections and uncaught exceptions.
 	 */
 	public static class LoggingExecutor extends ThreadPoolExecutor {
 
@@ -573,6 +572,12 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		 */
 		public List<Runnable> getRejectedTasks() { return rejectedTasks; }
 		final List<Runnable> rejectedTasks = new LinkedList<>();
+
+		/**
+		 * Uncaught exceptions mapped to tasks that threw them.
+		 */
+		public Map<Throwable, Runnable> getUncaughtTaskExceptions() {return uncaughtTaskExceptions;}
+		final Map<Throwable, Runnable> uncaughtTaskExceptions = new HashMap<>();
 
 		public String getName() { return name; }
 		final String name;
@@ -604,6 +609,9 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 					}
 					try {
 						task.run();
+					} catch (Throwable t) {
+						uncaughtTaskExceptions.put(t, task);
+						if (t instanceof Error) throw t;
 					} finally {
 						if (log.isLoggable(Level.FINER)) {
 							log.finer(name + " completed " + taskId + ": " + task);
