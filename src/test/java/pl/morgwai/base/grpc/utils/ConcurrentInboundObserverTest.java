@@ -87,7 +87,7 @@ public abstract class ConcurrentInboundObserverTest {
 			// deliver the next message immediately or after a slight delay
 			if (maxMessageDeliveryDelayMillis > 0L) {
 				try {
-					Thread.sleep(messageIdSequence % (maxMessageDeliveryDelayMillis + 1));
+					Thread.sleep(messageIdSequence % (maxMessageDeliveryDelayMillis + 1L));
 				} catch (InterruptedException ignored) {}
 			}
 
@@ -134,10 +134,9 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, outboundObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				outboundObserver.getOutputData(), outboundMessageComparator));
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -166,10 +165,9 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, outboundObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				outboundObserver.getOutputData(), outboundMessageComparator));
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -198,8 +196,7 @@ public abstract class ConcurrentInboundObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertSame("supplied error should be reported", error, outboundObserver.getReportedError());
-		assertTrue("onError() should be called", outboundObserver.isFinalized());
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -240,7 +237,7 @@ public abstract class ConcurrentInboundObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -281,7 +278,7 @@ public abstract class ConcurrentInboundObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -322,7 +319,7 @@ public abstract class ConcurrentInboundObserverTest {
 		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
 
 		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
-		verifyExecutor(grpcInternalExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -399,9 +396,8 @@ public abstract class ConcurrentInboundObserverTest {
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * resultsPerMessage, outboundObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
-		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -463,9 +459,8 @@ public abstract class ConcurrentInboundObserverTest {
 				1, handlerCallCounters[0]);
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * resultsPerMessage, outboundObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
-		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
@@ -539,16 +534,34 @@ public abstract class ConcurrentInboundObserverTest {
 		assertEquals("correct number of messages should be written",
 				numberOfMessages * tasksPerMessage * resultsPerTask,
 				outboundObserver.getOutputData().size());
-		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
-		verifyExecutor(grpcInternalExecutor);
 		verifyExecutor(userExecutor);
+		performStandardVerifications(outboundObserver);
 	}
 
 
 
-	public static void verifyExecutor(LoggingExecutor executor) {
+	public static void performStandardVerifications(FakeOutboundObserver<?, ?> outboundObserver) {
+		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
+		assertEquals("no extra finalizations should occur",
+				0, outboundObserver.extraFinalizationCount.get());
+		assertEquals("no messages should be written after finalization",
+				0, outboundObserver.messagesAfterFinalizationCount.get());
+		assertTrue("gRPC tasks shouldn't throw exceptions",
+				outboundObserver.grpcInternalExecutor.getUncaughtTaskExceptions().isEmpty());
+		verifyExecutor(outboundObserver.grpcInternalExecutor);
+	}
+
+
+
+	public static void verifyExecutor(LoggingExecutor executor, Throwable... expectedUncaught) {
 		assertTrue("no task scheduling failures should occur on " + executor.getName(),
 				executor.getRejectedTasks().isEmpty());
+		assertEquals("only expected exceptions should be thrown by tasks",
+				expectedUncaught.length, executor.getUncaughtTaskExceptions().size());
+		for (var exception: expectedUncaught) {
+			assertTrue("all expected exceptions should be thrown by tasks",
+					executor.getUncaughtTaskExceptions().containsKey(exception));
+		}
 		if (executor.isTerminated()) return;
 		final int activeCount = executor.getActiveCount();
 		final var unstartedTasks = executor.shutdownNow();
