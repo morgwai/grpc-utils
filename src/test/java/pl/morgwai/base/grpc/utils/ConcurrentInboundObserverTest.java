@@ -497,10 +497,9 @@ public abstract class ConcurrentInboundObserverTest {
 			maxConcurrentMessages,
 			(inboundMessage, individualObserver) -> {
 				final int[] resultCounters = new int[tasksPerMessage];
-				final var onReadyHandler = new DispatchingOnReadyHandler<>(
+				DispatchingOnReadyHandler.copyWithFlowControl(
 					individualObserver,
 					userExecutor,
-					false,
 					tasksPerMessage,
 					(i) -> resultCounters[i] < resultsPerTask,
 					(i) -> {
@@ -513,10 +512,8 @@ public abstract class ConcurrentInboundObserverTest {
 						}
 						resultCounters[i]++;
 						return new OutboundMessage(inboundMessage.id);
-					},
-					Object::toString
+					}
 				);
-				individualObserver.setOnReadyHandler(onReadyHandler);
 			},
 			newErrorHandler(Thread.currentThread())
 		);

@@ -2,14 +2,12 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.Iterator;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.NoSuchElementException;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import io.grpc.Status.Code;
-import io.grpc.StatusException;
+import io.grpc.*;
 import org.junit.*;
 
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
@@ -41,7 +39,6 @@ public class DispatchingOnReadyHandlerTest {
 	int resultCount;
 	int[] resultCounters;
 	AssertionError asyncAssertionError;
-	final RuntimeException testException = new RuntimeException("test exception");
 
 
 
@@ -68,16 +65,14 @@ public class DispatchingOnReadyHandlerTest {
 		final var numberOfResponses = 10;
 		outboundObserver.outputBufferSize = 3;
 		outboundObserver.unreadyDurationMillis = 5L;
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
+		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			false,
 			new Iterator<>() {
 				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
 				@Override public Integer next() { return ++resultCount; }
 			}
 		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(testSubjectHandler);
@@ -104,16 +99,13 @@ public class DispatchingOnReadyHandlerTest {
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 3;
 		outboundObserver.unreadyDurationMillis = 5L;
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
+		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			false,
 			numberOfTasks,
 			(i) -> resultCounters[i] < responsesPerTasks,
-			(i) -> ++resultCounters[i],
-			Object::toString
+			(i) -> ++resultCounters[i]
 		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(testSubjectHandler);
@@ -139,10 +131,9 @@ public class DispatchingOnReadyHandlerTest {
 		outboundObserver.outputBufferSize = 3;
 		outboundObserver.unreadyDurationMillis = 1L;
 		final var concurrencyGuard = new ReentrantLock();
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
+		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			false,
 			new Iterator<>() {
 
 				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
@@ -163,7 +154,6 @@ public class DispatchingOnReadyHandlerTest {
 				}
 			}
 		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(() -> {
@@ -186,208 +176,39 @@ public class DispatchingOnReadyHandlerTest {
 
 
 
-	void performExceptionHandlingVerifications() {
-		verifyExecutor(userExecutor, testException);
-		assertNotNull("exception should be reported via onError()", outboundObserver.reportedError);
-		assertTrue("reported exception should be a StatusException",
-				outboundObserver.reportedError instanceof StatusException);
-		assertSame("Status should have code INTERNAL",
-				((StatusException) outboundObserver.reportedError).getStatus().getCode(),
-				Code.INTERNAL);
-		assertSame("testException should be passed to onError as the cause",
-				testException, outboundObserver.reportedError.getCause());
-	}
-
-
-
 	@Test
-	public void testExceptionIsReportedToOutboundObserverAndTaskIsAborted()
-			throws InterruptedException {
-		final var numberOfResponses = 5;
+	public void testWaitForTasksToCompleteAndSendError() throws InterruptedException {
+		final RuntimeException thrownException = new RuntimeException("test exception");
+		final StatusException errorToReport = Status.INTERNAL.asException();
+		final var responsesPerTasks = 50;
+		final var numberOfTasks = 5;
 		final var messageNumberToThrowAfter = 2;
-		outboundObserver.outputBufferSize = 2;
+		resultCounters = new int[numberOfTasks];
+		outboundObserver.outputBufferSize = 10;
 		outboundObserver.unreadyDurationMillis = 5L;
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
+		@SuppressWarnings("unchecked")
+		final DispatchingOnReadyHandler<Integer>[] holder = new DispatchingOnReadyHandler[1];
+		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			false,
-			new Iterator<>() {
-
-				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
-
-				@Override public Integer next() {
-					if (resultCount == messageNumberToThrowAfter) throw testException;
-					if (resultCount >= messageNumberToThrowAfter) {
+			numberOfTasks,
+			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
+			(taskNumber) -> {
+				if (taskNumber == 0) {
+					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
+						holder[0].waitForTasksToCompleteAndReportError(errorToReport);
+						throw thrownException;
+					}
+					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
 						asyncAssertionError =
-								new AssertionError("processing should stop after exception");
+							new AssertionError("processing should stop after exception");
 						throw asyncAssertionError;
 					}
-					return ++resultCount;
 				}
+				return ++resultCounters[taskNumber];
 			}
 		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
-
-		final var startMillis = System.currentTimeMillis();
-		outboundObserver.runWithinListenerLock(testSubjectHandler);
-		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
-
-		assertEquals("2 messages should be written",
-				messageNumberToThrowAfter, outboundObserver.getOutputData().size());
-		performExceptionHandlingVerifications();
-		performStandardVerifications();
-	}
-
-
-
-	@Test
-	public void testOtherTasksAreCancelledAfterErrorIsReported() throws InterruptedException {
-		final var responsesPerTasks = 50;
-		final var numberOfTasks = 5;
-		final var messageNumberToThrowAfter = 2;
-		resultCounters = new int[numberOfTasks];
-		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5L;
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
-			outboundObserver,
-			userExecutor,
-			false,
-			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
-			(taskNumber) -> {
-				if (taskNumber == 0) {
-					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
-						throw testException;
-					}
-					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
-						asyncAssertionError =
-								new AssertionError("processing should stop after exception");
-						throw asyncAssertionError;
-					}
-				}
-				return ++resultCounters[taskNumber];
-			},
-			Object::toString
-		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
-
-		final var startMillis = System.currentTimeMillis();
-		outboundObserver.runWithinListenerLock(testSubjectHandler);
-		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
-
-		assertTrue("not all messages should be written",
-				responsesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter
-				> outboundObserver.getOutputData().size());
-		assertTrue("not all tasks should complete",
-				numberOfTasks > testSubjectHandler.completedTaskCount);
-		performExceptionHandlingVerifications();
-		performStandardVerifications();
-	}
-
-
-
-	@Test
-	public void testExceptionIsReportedAndOtherTasksCompleteIfTheLastUncompletedTaskThrows()
-			throws InterruptedException {
-		final var responsesPerTasks = 50;
-		final var numberOfTasks = 5;
-		final var messageNumberToThrowAfter = 10;
-		final var otherTasksCompleted = new CountDownLatch(numberOfTasks - 1);
-		resultCounters = new int[numberOfTasks];
-		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5L;
-		final var startMillis = System.currentTimeMillis();
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
-			outboundObserver,
-			userExecutor,
-			true,
-			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
-			(taskNumber) -> {
-				if (taskNumber == 0) {
-					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
-						try {
-							otherTasksCompleted.await(
-									getRemainingMillis(startMillis), TimeUnit.MILLISECONDS);
-						} catch (InterruptedException e) {
-							asyncAssertionError =
-									new AssertionError("other tasks failed to complete");
-							throw asyncAssertionError;
-						}
-						throw testException;
-					}
-					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
-						asyncAssertionError =
-							new AssertionError("processing should stop after exception");
-						throw asyncAssertionError;
-					}
-				}
-
-				++resultCounters[taskNumber];
-				if (resultCounters[taskNumber] == responsesPerTasks) {
-					otherTasksCompleted.countDown();
-				}
-				return  resultCounters[taskNumber];
-			},
-			Object::toString
-		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
-
-		outboundObserver.runWithinListenerLock(testSubjectHandler);
-		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
-
-		assertEquals("correct number of messages should be written",
-				responsesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
-				outboundObserver.getOutputData().size());
-		performExceptionHandlingVerifications();
-		performStandardVerifications();
-	}
-
-
-
-	@Test
-	public void testExceptionIsReportedAndOtherTasksCompleteIfNonFinalTaskThrows()
-			throws InterruptedException {
-		final var responsesPerTasks = 50;
-		final var numberOfTasks = 5;
-		final var messageNumberToThrowAfter = 2;
-		resultCounters = new int[numberOfTasks];
-		outboundObserver.outputBufferSize = 10;
-		outboundObserver.unreadyDurationMillis = 5L;
-		testSubjectHandler = new DispatchingOnReadyHandler<>(
-			outboundObserver,
-			userExecutor,
-			true,
-			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
-			(taskNumber) -> {
-				if (taskNumber == 0) {
-					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
-						throw testException;
-					}
-					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
-						asyncAssertionError =
-							new AssertionError("processing should stop after exception");
-						throw asyncAssertionError;
-					}
-				}
-				return ++resultCounters[taskNumber];
-			},
-			Object::toString
-		);
-		outboundObserver.setOnReadyHandler(testSubjectHandler);
+		holder[0] = testSubjectHandler;
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(testSubjectHandler);
@@ -400,7 +221,56 @@ public class DispatchingOnReadyHandlerTest {
 		assertEquals("correct number of messages should be written",
 				responsesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
 				outboundObserver.getOutputData().size());
-		performExceptionHandlingVerifications();
+		verifyExecutor(userExecutor, thrownException);
+		assertSame("errorToReport should be passed to onError",
+				errorToReport, outboundObserver.reportedError);
+		performStandardVerifications();
+	}
+
+
+
+	@Test
+	public void testNoSuchElementExceptionHandling()
+		throws InterruptedException {
+		final var responsesPerTasks = 50;
+		final var numberOfTasks = 5;
+		final var messageNumberToThrowAfter = 2;
+		resultCounters = new int[numberOfTasks];
+		outboundObserver.outputBufferSize = 10;
+		outboundObserver.unreadyDurationMillis = 5L;
+		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
+			outboundObserver,
+			userExecutor,
+			numberOfTasks,
+			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
+			(taskNumber) -> {
+				if (taskNumber == 0) {
+					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
+						throw new NoSuchElementException();
+					}
+					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
+						asyncAssertionError =
+							new AssertionError("processing should stop after exception");
+						throw asyncAssertionError;
+					}
+				}
+				return ++resultCounters[taskNumber];
+			}
+		);
+
+		final var startMillis = System.currentTimeMillis();
+		outboundObserver.runWithinListenerLock(testSubjectHandler);
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
+		grpcInternalExecutor.shutdown();
+		userExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+
+		assertEquals("correct number of messages should be written",
+				responsesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
+				outboundObserver.getOutputData().size());
+		verifyExecutor(userExecutor);
+		assertNull("no error should be reported", outboundObserver.reportedError);
 		performStandardVerifications();
 	}
 
