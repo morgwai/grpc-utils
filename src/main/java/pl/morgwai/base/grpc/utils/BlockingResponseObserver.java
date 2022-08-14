@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import io.grpc.stub.ClientCallStreamObserver;
 import io.grpc.stub.ClientResponseObserver;
+import pl.morgwai.base.concurrent.Awaitable;
 
 
 
@@ -118,19 +119,15 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 	/**
 	 * Awaits up to {@code timeout} of {@code unit} for {@link #onCompleted()} or
-	 * {@link #onError(Throwable)} to be called. If {@code timeout} is {@code 0} then awaits without
-	 * a timeout.
+	 * {@link #onError(Throwable)} to be called.
 	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
 	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
-	 *     <code>getCause()</code> will return the throwable passed as argument.
+	 *     {@link ErrorReportedException#getCause() getCause()} will return the throwable passed as
+	 *     the argument.
 	 */
 	public boolean awaitCompletion(long timeout, TimeUnit unit)
 			throws ErrorReportedException, InterruptedException {
-		if (timeout == 0L) {
-			latch.await();
-		} else {
-			latch.await(timeout, unit);
-		}
+		latch.await(timeout, unit);
 		if (error != null) throw new ErrorReportedException(error);
 		return completed;
 	}
@@ -145,11 +142,23 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	}
 
 	/**
-	 * Equivalent to {@link #awaitCompletion(long) awaitCompletion(0l)}.
+	 * Awaits without a timeout for {@link #onCompleted()} or {@link #onError(Throwable)} to be
+	 * called.
+	 * @see #awaitCompletion(long, TimeUnit)
 	 */
 	public void awaitCompletion() throws ErrorReportedException, InterruptedException {
 		latch.await();
 		if (error != null) throw new ErrorReportedException(error);
+	}
+
+	public Awaitable.WithUnit toAwaitable() {
+		return (timeout, unit) -> {
+			try {
+				return awaitCompletion(timeout, unit);
+			} catch (ErrorReportedException e) {
+				return true;
+			}
+		};
 	}
 
 

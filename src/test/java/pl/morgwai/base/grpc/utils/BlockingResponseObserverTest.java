@@ -51,7 +51,6 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 			}
 			responseObserver.onCompleted();
 		});
-
 		worker.start();
 		responseObserver.awaitCompletion(50L);
 		worker.join(10L);
@@ -76,13 +75,14 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 			} catch (InterruptedException ignored) {}
 			responseObserver.onError(reportedError);
 		});
-
 		worker.start();
 		try {
 			responseObserver.awaitCompletion(50L);
 			fail("ErrorReportedException should be thrown");
-		} catch (ErrorReportedException | InterruptedException e) {
+		} catch (ErrorReportedException e) {
 			assertSame("reported error should be caught", reportedError, e.getCause());
+			assertSame("reported error should be available via getError()",
+					reportedError, responseObserver.getError());
 		}
 		worker.join(10L);
 
@@ -92,7 +92,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 
 
 	@Test
-	public void testTimeout() throws InterruptedException, ErrorReportedException {
+	public void testTimeout() throws InterruptedException {
 		final var worker = new Thread(() -> {
 			try {
 				Thread.sleep(20L);
@@ -101,11 +101,11 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 				responseObserver.notifyAll();
 			}
 		});
-
 		worker.start();
 		final var startMillis = System.currentTimeMillis();
-		responseObserver.awaitCompletion(50L);
+		final var awaitResult = responseObserver.toAwaitable().await(50L);
 
+		assertFalse("await result should indicate failure", awaitResult);
 		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50L);
 		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
 		worker.join(10L);
@@ -116,7 +116,6 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 	@Test
 	public void completedBeforeAwait() throws InterruptedException, ErrorReportedException {
 		responseObserver.onCompleted();
-
 		responseObserver.awaitCompletion(1L);
 
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
@@ -132,11 +131,12 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 			(observer) -> requestObserverHolder[0] = observer
 		);
 		replayAll();
-
 		responseObserver.beforeStart(requestObserver);
 
-		assertSame("requestObserver passed to beforeStart should be passed to startHandler",
+		assertSame("requestObserver should be passed to startHandler",
 				requestObserver, requestObserverHolder[0]);
+		assertSame("requestObserver should be available via getRequestObserver()",
+				requestObserver, responseObserver.getRequestObserver());
 		verifyAll();
 	}
 
