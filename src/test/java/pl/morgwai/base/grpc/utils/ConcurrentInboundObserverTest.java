@@ -202,6 +202,41 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 	@Test
+	public void testReportErrorAfterTasksAndInboundComplete() throws InterruptedException {
+		final var numberOfMessages = 10;
+		final var error = new Exception();
+		@SuppressWarnings("unchecked")
+		final ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>[] holder =
+				new ConcurrentInboundObserver[1];
+		final var testSubject = newConcurrentInboundObserver(
+			2,
+			(inboundMessage, individualObserver) -> {
+				if (inboundMessage.id == 2) {
+					holder[0].reportErrorAfterTasksAndInboundComplete(error);
+				}
+				individualObserver.onNext(new OutboundMessage(inboundMessage.id));
+				individualObserver.onCompleted();
+			},
+			newErrorHandler(Thread.currentThread())
+		);
+		holder[0] = testSubject;
+
+		final var startMillis = System.currentTimeMillis();
+		outboundObserver.startMessageDelivery(
+			testSubject, new InboundMessageProducer(numberOfMessages));
+		outboundObserver.awaitFinalization(getRemainingMillis(startMillis));
+		grpcInternalExecutor.shutdown();
+		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
+
+		assertEquals("correct number of messages should be written",
+			numberOfMessages, outboundObserver.getOutputData().size());
+		assertSame("supplied error should be reported", error, outboundObserver.getReportedError());
+		performStandardVerifications(outboundObserver);
+	}
+
+
+
+	@Test
 	public void testOnNextAfterOnCompleted() throws InterruptedException {
 		final Boolean[] exceptionThrownHolder = { null };
 		final var numberOfMessages = 1;
