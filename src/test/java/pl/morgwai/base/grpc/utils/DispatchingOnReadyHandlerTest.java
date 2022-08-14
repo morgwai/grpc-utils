@@ -178,28 +178,31 @@ public class DispatchingOnReadyHandlerTest {
 
 	@Test
 	public void testReportErrorAfterTasksComplete() throws InterruptedException {
-		final StatusException errorToReport = Status.INTERNAL.asException();
+		final StatusException exceptionToReport = Status.INTERNAL.asException();
 		final var responsesPerTasks = 50;
 		final var numberOfTasks = 5;
 		final var messageNumberToThrowAfter = 2;
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 10;
 		outboundObserver.unreadyDurationMillis = 5L;
-		@SuppressWarnings("unchecked")
-		final DispatchingOnReadyHandler<Integer>[] holder = new DispatchingOnReadyHandler[1];
-		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
+		testSubjectHandler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
-			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
-			(taskNumber) -> {
+			numberOfTasks
+		) {
+
+			@Override protected boolean producerHasMoreMessages(int taskNumber) {
+				return resultCounters[taskNumber] < responsesPerTasks;
+			}
+
+			@Override protected Integer produceNextMessage(int taskNumber) {
 				if (taskNumber == 0 && resultCounters[taskNumber] == messageNumberToThrowAfter) {
-					holder[0].reportErrorAfterTasksComplete(errorToReport);
+					reportErrorAfterTasksComplete(exceptionToReport);
 				}
 				return ++resultCounters[taskNumber];
 			}
-		);
-		holder[0] = testSubjectHandler;
+		};
+		outboundObserver.setOnReadyHandler(testSubjectHandler);
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(testSubjectHandler);
@@ -212,8 +215,8 @@ public class DispatchingOnReadyHandlerTest {
 		assertEquals("correct number of messages should be written",
 				responsesPerTasks * numberOfTasks, outboundObserver.getOutputData().size());
 		verifyExecutor(userExecutor);
-		assertSame("errorToReport should be passed to onError",
-				errorToReport, outboundObserver.reportedError);
+		assertSame("exceptionToReport should be passed to onError",
+				exceptionToReport, outboundObserver.reportedError);
 		performStandardVerifications();
 	}
 
@@ -268,24 +271,27 @@ public class DispatchingOnReadyHandlerTest {
 	@Test
 	public void testNoSuchElementExceptionAfterReportErrorAfterTasksComplete()
 			throws InterruptedException {
-		final StatusException errorToReport = Status.INTERNAL.asException();
+		final StatusException exceptionToReport = Status.INTERNAL.asException();
 		final var responsesPerTasks = 50;
 		final var numberOfTasks = 5;
 		final var messageNumberToThrowAfter = 2;
 		resultCounters = new int[numberOfTasks];
 		outboundObserver.outputBufferSize = 10;
 		outboundObserver.unreadyDurationMillis = 5L;
-		@SuppressWarnings("unchecked")
-		final DispatchingOnReadyHandler<Integer>[] holder = new DispatchingOnReadyHandler[1];
-		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
+		testSubjectHandler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
-			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
-			(taskNumber) -> {
+			numberOfTasks
+		) {
+
+			@Override protected boolean producerHasMoreMessages(int taskNumber) {
+				return resultCounters[taskNumber] < responsesPerTasks;
+			}
+
+			@Override protected Integer produceNextMessage(int taskNumber) {
 				if (taskNumber == 0) {
 					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
-						holder[0].reportErrorAfterTasksComplete(errorToReport);
+						reportErrorAfterTasksComplete(exceptionToReport);
 						throw new NoSuchElementException();
 					}
 					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
@@ -296,8 +302,8 @@ public class DispatchingOnReadyHandlerTest {
 				}
 				return ++resultCounters[taskNumber];
 			}
-		);
-		holder[0] = testSubjectHandler;
+		};
+		outboundObserver.setOnReadyHandler(testSubjectHandler);
 
 		final var startMillis = System.currentTimeMillis();
 		outboundObserver.runWithinListenerLock(testSubjectHandler);
@@ -311,8 +317,8 @@ public class DispatchingOnReadyHandlerTest {
 				responsesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
 				outboundObserver.getOutputData().size());
 		verifyExecutor(userExecutor);
-		assertSame("errorToReport should be passed to onError",
-				errorToReport, outboundObserver.reportedError);
+		assertSame("exceptionToReport should be passed to onError",
+				exceptionToReport, outboundObserver.reportedError);
 		performStandardVerifications();
 	}
 
