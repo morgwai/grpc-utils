@@ -68,10 +68,8 @@ public class DispatchingOnReadyHandlerTest {
 		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			new Iterator<>() {
-				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
-				@Override public Integer next() { return ++resultCount; }
-			}
+			() -> resultCount < numberOfResponses,
+			() -> ++resultCount
 		);
 
 		final var startMillis = System.currentTimeMillis();
