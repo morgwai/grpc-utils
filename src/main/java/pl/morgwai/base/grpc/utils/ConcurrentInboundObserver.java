@@ -506,7 +506,10 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@code errorToReport} will be discarded.</p>
 	 * <p>
 	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
-	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.</p>
+	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.<br/>
+	 * If it's called in {@link #onInboundMessage(Object, CallStreamObserver)}, it should be
+	 * followed by {@link OutboundSubstreamObserver#onCompleted()
+	 * individualObserver.onCompleted()}.</p>
 	 */
 	public final void reportErrorAfterTasksAndInboundComplete(Throwable errorToReport) {
 		synchronized (lock) {
