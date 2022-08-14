@@ -420,6 +420,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	int idleCount;  // increased if outbound unready after completing a substream from onNext(...)
 	final Set<OutboundSubstreamObserver> activeOutboundSubstreams =
 			ConcurrentHashMap.newKeySet();
+	Throwable errorToReport;
 
 	protected final Object lock = new Object();
 
@@ -480,7 +481,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Calls {@link #onInboundMessage(Object, CallStreamObserver)
 	 * onInboundMessage}({@code message}, {@link #newOutboundSubstream()}) and if the parent
-	 * outbound observer is ready, then also {@code individualObserver.onReadyHandler.run()}.
+	 * {@code outboundObserver} is ready, then also {@code individualObserver.onReadyHandler.run()}.
 	 */
 	@Override
 	public final void onNext(InboundT message) {
@@ -495,27 +496,22 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	Throwable errorToReport;
-
-
-
 	/**
-	 * Waits for all outbound substreams created with {@link #newOutboundSubstream()} to be marked
-	 * as completed, then calls {@code onError(errorToReport)} on the parent outbound observer.
-	 * This method should only be called from {@link #onError(Throwable)} or {@link #onHalfClosed()}
-	 * after the inbound stream is closed.
+	 * Indicates that after all tasks and the inbound stream are completed, {@code errorToReport}
+	 * should be nevertheless reported via
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}.
 	 * <p>
 	 * If after this method is called, any of the remaining individual outbound substream observers
 	 * gets a call to its {@link OutboundSubstreamObserver#onError(Throwable)}, then
 	 * {@code errorToReport} will be discarded.</p>
 	 * <p>
-	 * Calling this method from {@link #onInboundMessage(Object, CallStreamObserver)} will have
-	 * unpredictable results due to race conditions with/between threads handling newly incoming
-	 * inbound messages from the still unclosed inbound stream.</p>
+	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
+	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.</p>
 	 */
-	public final void waitForTasksToCompleteAndReportError(Throwable errorToReport) {
-		this.errorToReport = errorToReport;
-		onCompleted();
+	public final void reportErrorAfterTasksAndInboundComplete(Throwable errorToReport) {
+		synchronized (lock) {
+			this.errorToReport = errorToReport;
+		}
 	}
 
 
@@ -523,13 +519,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Calls {@link #onHalfClosed()}, marks the inbound as completed and if all
 	 * {@link #newOutboundSubstream() outbound substreams} are marked as completed, then marks
-	 * the parent outbound as completed also.
+	 * the parent {@code outboundObserver} as completed also.
 	 */
 	@Override
 	public final void onCompleted() {
 		onHalfClosed();
 		synchronized (lock) {
-			if (halfClosed) return;  // onHalfClosed called waitForSubstreamsToCompleteAndSendError
 			halfClosed = true;
 			if (activeOutboundSubstreams.isEmpty()) {
 				if (errorToReport != null) {
@@ -549,12 +544,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Constructs a new {@link OutboundSubstreamObserver OutboundSubstreamObserver}. This method is
+	 * creates a new {@link OutboundSubstreamObserver outbound substream}. This method is
 	 * called each time a new inbound message arrives in {@link #onNext(Object)}.
 	 * <p>
 	 * Applications may also create additional outbound substreams to send outbound messages not
-	 * related to any inbound message: the parent outbound stream will not be closed until all
-	 * such additional substreams are completed.</p>
+	 * related to any inbound message: the parent {@code outboundObserver} will not be marked as
+	 * completed until all substreams are completed.</p>
 	 * <p>
 	 * Subclasses may override this method if they need to use specialized subclasses of
 	 * {@link OutboundSubstreamObserver OutboundSubstreamObserver}: see
@@ -567,8 +562,9 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * A thread-safe substream of the parent outbound stream. The parent will be marked as completed
-	 * automatically when and only if all its substreams are marked as completed.
+	 * A thread-safe substream of the parent outbound stream. The parent {@code outboundObserver}
+	 * will be marked as completed automatically when and only if all its substreams are marked as
+	 * completed.
 	 * @see #newOutboundSubstream()
 	 */
 	public class OutboundSubstreamObserver extends CallStreamObserver<OutboundT> {
@@ -586,8 +582,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 		/**
 		 * Marks this substream as completed. If all outbound substreams are completed and the
-		 * inbound stream is closed, {@code onCompleted()} from the parent outbound observer is
-		 * called automatically.
+		 * inbound stream is closed, {@link CallStreamObserver#onCompleted() onCompleted()} from the
+		 * parent {@code outboundObserver} is called automatically.
 		 */
 		@Override
 		public void onCompleted() {
@@ -617,7 +613,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 		/**
-		 * Forwards {@code message} to the parent outbound observer.
+		 * Forwards {@code message} to the parent {@code outboundObserver}.
 		 */
 		@Override
 		public void onNext(OutboundT message) {
@@ -632,7 +628,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 		/**
-		 * Forwards {@code error} to the parent outbound observer.
+		 * Forwards {@code error} to the parent {@code outboundObserver}.
 		 */
 		@Override
 		public void onError(Throwable error) {

@@ -46,10 +46,9 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * be marked as completed.<br/>
 	 * Any other unchecked {@link Throwable} will be passed uncaught and task will be left
 	 * uncompleted. In such case it should be ensured that the call gets aborted in some way, for
-	 * example {@code messageProducers} may call either
-	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(...)} or
-	 * {@link #waitForTasksToCompleteAndReportError(Throwable)} before throwing unchecked
-	 * {@link Throwable}s other than {@link NoSuchElementException}.</p>
+	 * example the given {@code messageProducer} may call
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(...)} before throwing
+	 * an unchecked {@link Throwable}s other than {@link NoSuchElementException}.</p>
 	 * @param outboundObserver target outbound observer to which messages from
 	 *     {@code messageProducers} will be streamed.
 	 * @param taskExecutor executor to which message producing tasks will be dispatched.
@@ -146,21 +145,23 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	final Iterator<MessageT>[] messageProducers;
 
 	final boolean[] taskRunning;
-	final Object lock = new Object();
 	int completedTaskCount = 0;
 	Throwable errorToReport;
+
+	final Object lock = new Object();
 
 
 
 	/**
-	 * May be called if one of the tasks throws an unchecked {@link Throwable} but other tasks
-	 * should be allowed to complete before {@code errorToReport} is reported via
-	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}.
+	 * Indicates that after all tasks are completed {@code errorToReport} should be nevertheless
+	 * reported via
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}. A call
+	 * to this method within a {@code messageProcessor} is usually followed by throwing a
+	 * {@link NoSuchElementException}.
 	 */
-	public final void waitForTasksToCompleteAndReportError(Throwable errorToReport) {
+	public final void reportErrorAfterTasksComplete(Throwable errorToReport) {
 		synchronized (lock) {
 			this.errorToReport = errorToReport;
-			completedTaskCount++;
 		}
 	}
 
