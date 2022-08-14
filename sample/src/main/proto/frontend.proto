@@ -1,0 +1,21 @@
+// Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
+syntax = "proto3";
+package pl.morgwai.samples.grpc.utils;
+
+option java_outer_classname = "FrontendProto";
+option java_multiple_files = true;
+
+service Frontend {
+	rpc parent(stream ParentRequest) returns (stream ParentResponse) {}
+}
+
+message ParentRequest {
+	int32 messageId = 1;
+	string message = 2;
+}
+
+message ParentResponse {
+	int32 messageId = 1;
+	string message = 2;
+	int32 resultId = 3;
+}

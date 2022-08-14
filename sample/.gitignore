@@ -1,0 +1,16 @@
+local
+
+# build
+target
+dependency-reduced-pom.xml
+build
+.gradle
+build.gradle
+settings.gradle
+
+# ide
+.idea
+local.properties
+.project
+.classpath
+.settings

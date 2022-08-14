@@ -1,0 +1,33 @@
+// Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
+syntax = "proto3";
+package pl.morgwai.samples.grpc.utils;
+
+option java_outer_classname = "BackendProto";
+option java_multiple_files = true;
+
+service Backend {
+	rpc nested(stream NestedRequest) returns (stream NestedResponse) {}
+	rpc chained(stream ChainedRequest) returns (stream ChainedResponse) {}
+}
+
+message NestedRequest {
+	int32 messageId = 1;
+	string message = 2;
+}
+
+message NestedResponse {
+	int32 messageId = 1;
+	string message = 2;
+}
+
+message ChainedRequest {
+	int32 messageId = 1;
+	string message = 2;
+	int32 resultId = 3;
+}
+
+message ChainedResponse {
+	int32 messageId = 1;
+	string message = 2;
+	int32 resultId = 3;
+}

@@ -23,4 +23,4 @@ A `ClientResponseObserver`, that blocks until response is completed with either 
 
 ## EXAMPLES
 
-See [sample app for grpc-scopes lib](https://github.com/morgwai/grpc-scopes/tree/master/sample)
+See [sample app](sample)
