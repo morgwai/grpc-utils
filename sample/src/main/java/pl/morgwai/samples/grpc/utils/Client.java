@@ -99,13 +99,13 @@ public class Client {
 					try {
 						Thread.sleep(pauseMillis);
 					} catch (InterruptedException ignored) {}
-					requestObserver.request(pauseRate);
+					getRequestObserver().get().request(pauseRate);
 				}
 			}
 
 			@Override
 			public void beforeStart(ClientCallStreamObserver<ParentRequest> requestObserver) {
-				this.requestObserver = requestObserver;
+				super.beforeStart(requestObserver);
 				requestObserver.disableAutoRequestWithInitial(pauseRate);
 				requestObserver.setOnReadyHandler(() -> {
 					while ((requestCounter.get() < numberOfMessages || numberOfMessages == 0)

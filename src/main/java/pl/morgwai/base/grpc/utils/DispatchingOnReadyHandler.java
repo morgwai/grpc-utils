@@ -10,12 +10,13 @@ import io.grpc.stub.CallStreamObserver;
 
 
 /**
- * Streams messages to an outbound {@link CallStreamObserver} from multiple sources in separate
- * threads with respect to flow-control. Useful in sever methods when 1 request message can result
- * in multiple response messages that can be produced concurrently in separate tasks.
+ * Streams messages to an {@link CallStreamObserver outboundObserver} from multiple sources in
+ * separate threads with respect to flow-control. Useful in sever methods when 1 request message can
+ * result in multiple response messages that can be produced concurrently in separate tasks.
  * This class has similar purpose to
  * {@link io.grpc.stub.StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)}, but work
- * is dispatched to the supplied executor and parallelized according to the supplied arguments.
+ * is dispatched to the {@link #taskExecutor Executor} supplied via {@code taskExecutor} constructor
+ * param and parallelized according to the value of {@code numberOfTasks} constructor param.
  * <p>
  * Typical usage in streaming-server methods:</p>
  * <pre>
@@ -24,7 +25,7 @@ import io.grpc.stub.CallStreamObserver;
  *     final var processor = new MyRequestProcessor(request, NUMBER_OF_TASKS);
  *     final var responseObserver =
  *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
- *     responseObserver.setOnCancelHandler(() -&gt; processor.cancel());
+ *     responseObserver.setOnCancelHandler(processor::cancel);
  *     DispatchingOnReadyHandler.copyWithFlowControl(
  *         responseObserver,
  *         taskExecutor,
@@ -39,8 +40,15 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 	/**
-	 * Indicates whether the producer for the task number {@code taskNumber} has more messages.
+	 * Indicates whether the {@link #produceNextMessage(int) produceNextMessage(taskNumber)} will
+	 * produce more messages for the task number {@code taskNumber}.
 	 * The default implementation calls {@link #producerHasMoreMessagesIndicator}.
+	 * <p>
+	 * Implementations are allowed to return {@code true} if it is hard to determine upfront if
+	 * there will be more messages or not, and {@link #produceNextMessage(int)} may throw
+	 * {@link NoSuchElementException} exception to indicate that the task is completed.<br/>
+	 * Alternatively, this method is also free to block until it is able to give a definitive
+	 * answer.</p>
 	 */
 	protected boolean producerHasMoreMessages(int taskNumber) {
 		return producerHasMoreMessagesIndicator.apply(taskNumber);
@@ -58,6 +66,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	/**
 	 * Produces a next message in the task number {@code taskNumber}.
 	 * The default implementation calls {@link #messageProducer}.
+	 * @throws NoSuchElementException if the task number {@code taskNumber} is completed.
 	 */
 	protected MessageT produceNextMessage(int taskNumber) {
 		return messageProducer.apply(taskNumber);
@@ -73,22 +82,28 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 	/**
-	 * Constructs a new handler with the number of tasks given by {@code numberOfTasks} param.
+	 * Constructs a new handler with {@code numberOfTasks} tasks and initializes result message
+	 * producing functions {@link #messageProducer} and {@link #producerHasMoreMessagesIndicator}.
 	 * Each task will be dispatched to {@code taskExecutor} and will produce messages by applying
-	 * {@code messageProducer} to task number. Resulting messages will be streamed concurrently from
-	 * all tasks to {@code outboundObserver} with respect to flow-control: if
-	 * {@code outboundObserver} becomes unready, the tasks will exit and will be redispatched again
-	 * after {@code outboundObserver} becomes ready again. Redispatching will continue until the
-	 * given task is marked as completed.<br/>
-	 * A task will be marked as completed if applying {@code producerHasMoreMessagesIndicator} to
-	 * its number returns {@code false} or if {@code messageProducer} throws
-	 * {@link NoSuchElementException} for the given task number.
+	 * the {@link #messageProducer IngFunction} supplied via {@code messageProducer} to the task's
+	 * number.<br/>
+	 * Tasks are numbered from {@code 0} to {@code numberOfTasks - 1}.
+	 * <p>
+	 * Resulting messages will be streamed concurrently from all tasks to {@code outboundObserver}
+	 * param with respect to flow-control: if {@code outboundObserver} becomes unready, the tasks
+	 * will exit and will be redispatched again after {@code outboundObserver} becomes ready again.
+	 * Redispatching will continue until the given task is completed.</p>
+	 * <p>
+	 * A task will be marked as completed if applying the {@link #producerHasMoreMessagesIndicator
+	 * IntFunction} supplied via {@code producerHasMoreMessagesIndicator} param to task's number
+	 * returns {@code false} or if {@link #messageProducer} throws {@link NoSuchElementException}
+	 * for the given task number.</p>
 	 * <p>
 	 * If a task throws any other unchecked {@link Throwable}, it will be passed uncaught and the
 	 * task will be left uncompleted. In such case it should be ensured that the call gets aborted
-	 * in some way. For example {@code messageProducer} may call
-	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(...)} before throwing
-	 * an unchecked {@link Throwable} other than {@link NoSuchElementException}.</p>
+	 * in some way: for example {@link #messageProducer} may call
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(...)} before
+	 * throwing.</p>
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<MessageT> outboundObserver,
@@ -149,7 +164,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	/**
 	 * Calls {@link #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction,
 	 * IntFunction)} with a number of tasks based on the length of {@code messageProducers} and
-	 * {@link IntFunction}s built from {@code messageProducers} {@link Iterator#hasNext()} and
+	 * {@link IntFunction}s built from {@code messageProducers}' {@link Iterator#hasNext()} and
 	 * {@link Iterator#next()} methods.
 	 */
 	@SafeVarargs
@@ -205,7 +220,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * reported via
 	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}. A call
 	 * to this method within a {@code messageProcessor} is usually followed by throwing a
-	 * {@link NoSuchElementException}.
+	 * {@link NoSuchElementException} to mark it as completed.
 	 */
 	public final void reportErrorAfterTasksComplete(Throwable errorToReport) {
 		synchronized (lock) {
@@ -216,8 +231,12 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 	/**
-	 * For each {@code messageProducer} dispatches a task to {@code taskExecutor}, that handles a
-	 * single cycle of readiness of {@code outboundObserver}.
+	 * Dispatches {@code numberOfTasks} tasks to {@code taskExecutor}, that keep producing
+	 * messages with {@link #produceNextMessage(int) produceNextMessage(taskNumber)} and sending
+	 * them to {@code outboundObserver} as long as it is ready and the given task is not completed.
+	 * When {@code outboundObserver} becomes unready, tasks exit and will be redispatched during
+	 * the next call to this method. Redispatching will continue until tasks are marked as
+	 * completed.
 	 */
 	public void run() {
 		synchronized (lock) {
@@ -227,7 +246,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 			for (int taskNumber = 0; taskNumber < numberOfTasks; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
-				// 1 cycle and taskRunning flags prevent dispatching redundant tasks in in such case
+				// 1 cycle and taskRunning flags prevent dispatching duplicates in in such case.
 				if (taskRunning[taskNumber]) continue;
 				taskRunning[taskNumber] = true;
 				taskExecutor.execute(new Task(taskNumber));

@@ -82,7 +82,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 		} catch (ErrorReportedException e) {
 			assertSame("reported error should be caught", reportedError, e.getCause());
 			assertSame("reported error should be available via getError()",
-					reportedError, responseObserver.getError());
+					reportedError, responseObserver.getError().get());
 		}
 		worker.join(10L);
 
@@ -136,7 +136,7 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 		assertSame("requestObserver should be passed to startHandler",
 				requestObserver, requestObserverHolder[0]);
 		assertSame("requestObserver should be available via getRequestObserver()",
-				requestObserver, responseObserver.getRequestObserver());
+				requestObserver, responseObserver.getRequestObserver().get());
 		verifyAll();
 	}
 

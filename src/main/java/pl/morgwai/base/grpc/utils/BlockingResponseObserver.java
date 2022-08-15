@@ -1,6 +1,7 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -12,13 +13,13 @@ import pl.morgwai.base.concurrent.Awaitable;
 
 
 /**
- * A {@link ClientResponseObserver}, that blocks until response is completed with either
+ * A {@link ClientResponseObserver}, that blocks until the response stream is completed with either
  * {@link #onCompleted()} or {@link #onError(Throwable)}.
  * <p>
  * Typical usage:</p>
  * <pre>
  * var responseObserver = new BlockingResponseObserver&lt;ResponseMessage&gt;(response -&gt; {
- *     // handle ResponseMessage response here...
+ *     // handle responses here...
  * });
  * myGrpcServiceStub.myRemoteProcedure(someRequest, responseObserver);
  * try {
@@ -36,7 +37,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Default implementation calls {@link #responseHandler}.
+	 * The default implementation calls {@link #responseHandler}.
 	 */
 	@Override
 	public void onNext(ResponseT response) {
@@ -44,73 +45,80 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	}
 
 	/**
-	 * Called by {@link #onNext(Object)}. Initialized via the constructor param.
+	 * Called by {@link #onNext(Object)}. Initialized via {@code responseHandler}
+	 * {@link #BlockingResponseObserver(Consumer, Consumer) constructor} param.
 	 */
-	protected Consumer<ResponseT> responseHandler;
+	protected final Consumer<ResponseT> responseHandler;
 
 
 
 	/**
 	 * Returns {@link ClientCallStreamObserver requestObserver} passed to
-	 * {@link #beforeStart(ClientCallStreamObserver)}.
+	 * {@link #beforeStart(ClientCallStreamObserver)} or {@code empty} if
+	 * {@link #beforeStart(ClientCallStreamObserver)} hasn't been called yet.
 	 */
-	public ClientCallStreamObserver<RequestT> getRequestObserver() { return requestObserver; }
-	protected ClientCallStreamObserver<RequestT> requestObserver;
+	public Optional<ClientCallStreamObserver<RequestT>> getRequestObserver() {
+		return Optional.ofNullable(requestObserver);
+	}
+	ClientCallStreamObserver<RequestT> requestObserver;
 
 	/**
-	 * Default implementation stores {@code requestObserver} (so that it can be later retrieved with
-	 * {@link #getRequestObserver()}) and calls {@link #startHandler}.
+	 * The default implementation stores {@code requestObserver} (so that it can be later retrieved
+	 * with {@link #getRequestObserver()}) and calls {@link #beforeStartHandler} if it's not
+	 * {@code null}.
 	 */
 	@Override
 	public void beforeStart(final ClientCallStreamObserver<RequestT> requestObserver) {
 		this.requestObserver = requestObserver;
-		if (startHandler != null) startHandler.accept(requestObserver);
+		if (beforeStartHandler != null) beforeStartHandler.accept(requestObserver);
 	}
 
 	/**
 	 * Called by {@link #beforeStart(ClientCallStreamObserver)}.
-	 * Initialized via the constructor param.
+	 * Initialized via {@code beforeStartHandler}
+	 * {@link #BlockingResponseObserver(Consumer, Consumer) constructor} param.
 	 */
-	protected Consumer<ClientCallStreamObserver<RequestT>> startHandler;
+	protected final Consumer<ClientCallStreamObserver<RequestT>> beforeStartHandler;
 
 
+
+	/**
+	 * Initializes {@link #responseHandler} and {@link #beforeStartHandler}.
+	 */
+	public BlockingResponseObserver(
+			Consumer<ResponseT> responseHandler,
+			Consumer<ClientCallStreamObserver<RequestT>> beforeStartHandler) {
+		this.responseHandler = responseHandler;
+		this.beforeStartHandler = beforeStartHandler;
+	}
 
 	/**
 	 * Initializes {@link #responseHandler}.
 	 */
 	public BlockingResponseObserver(Consumer<ResponseT> responseHandler) {
-		this.responseHandler = responseHandler;
+		this(responseHandler, null);
 	}
 
 	/**
-	 * Initializes {@link #responseHandler} and {@link #startHandler}.
+	 * Constructor for those who prefer to override methods rather than provide lambdas as params.
+	 * At least {@link #onNext(Object)} must be overridden.
 	 */
-	public BlockingResponseObserver(
-			Consumer<ResponseT> responseHandler,
-			Consumer<ClientCallStreamObserver<RequestT>> startHandler) {
-		this.responseHandler = responseHandler;
-		this.startHandler = startHandler;
-	}
-
-	/**
-	 * Constructor for those who prefer to override {@link #onNext(Object)} in a subclass instead
-	 * of providing a lambda.
-	 */
-	protected BlockingResponseObserver() {}
+	protected BlockingResponseObserver() { this(null, null); }
 
 
 
 	/**
 	 * Returns {@code true} if either {@link #onCompleted()} or {@link #onError(Throwable)} was
-	 * called.
+	 * called, {@code false} otherwise.
 	 */
 	public boolean isCompleted() { return completed; }
 	volatile boolean completed = false;
 
 	/**
-	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise {@code null}.
+	 * If {@link #onError(Throwable)} has been called, returns its argument, otherwise
+	 * {@code empty}.
 	 */
-	public Throwable getError() { return error; }
+	public Optional<Throwable> getError() { return Optional.ofNullable(error); }
 	volatile Throwable error;
 
 	final CountDownLatch latch = new CountDownLatch(1);
@@ -151,6 +159,9 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		if (error != null) throw new ErrorReportedException(error);
 	}
 
+	/**
+	 * Returns {@link Awaitable} of {@link #awaitCompletion(long, TimeUnit)}.
+	 */
 	public Awaitable.WithUnit toAwaitable() {
 		return (timeout, unit) -> {
 			try {
@@ -164,7 +175,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Notifies the thread that called {@link #awaitCompletion(long)}.
+	 * Notifies threads awaiting for completion via {@link #awaitCompletion(long)}.
 	 */
 	@Override
 	public void onCompleted() {
@@ -175,7 +186,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Causes {@link #awaitCompletion(long)} to throw a {@link ErrorReportedException}.
+	 * Causes {@link #awaitCompletion(long)} to throw an
+	 * {@link ErrorReportedException ErrorReportedException}.
 	 */
 	@Override
 	public void onError(Throwable error) {
@@ -186,8 +198,9 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Thrown by {@link BlockingResponseObserver#awaitCompletion(long)}. {@code getCause()} will
-	 * return exception reported via {@link BlockingResponseObserver#onError(Throwable)}.
+	 * Thrown by {@link BlockingResponseObserver#awaitCompletion(long)} if
+	 * {@link #onError(Throwable)} was called. {@link ErrorReportedException#getCause()} will
+	 * return the exception that was passed as an argument to {@link #onError(Throwable)}.
 	 */
 	public static class ErrorReportedException extends Exception {
 		ErrorReportedException(Throwable reportedError) { super(reportedError); }
