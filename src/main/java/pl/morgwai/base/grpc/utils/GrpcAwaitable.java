@@ -1,3 +1,4 @@
+// Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
 import java.util.concurrent.TimeUnit;
@@ -19,8 +20,10 @@ public interface GrpcAwaitable {
 	 * {@link Server#awaitTermination(long, TimeUnit) termination} of {@code server}.
 	 */
 	static Awaitable.WithUnit ofTermination(Server server) {
-		server.shutdown();
-		return server::awaitTermination;
+		return (timeout, unit) -> {
+			server.shutdown();
+			return server.awaitTermination(timeout, unit);
+		};
 	}
 
 
@@ -48,8 +51,10 @@ public interface GrpcAwaitable {
 	 * {@link ManagedChannel#awaitTermination(long, TimeUnit) termination} of {@code channel}.
 	 */
 	static Awaitable.WithUnit ofTermination(ManagedChannel channel) {
-		channel.shutdown();
-		return channel::awaitTermination;
+		return (timeout, unit) -> {
+			channel.shutdown();
+			return channel.awaitTermination(timeout, unit);
+		};
 	}
 
 
