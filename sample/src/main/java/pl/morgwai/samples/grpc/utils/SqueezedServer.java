@@ -182,8 +182,7 @@ public class SqueezedServer extends FrontendImplBase {
 				}
 			}
 
-			@Override
-			protected void onBeforeStart(
+			@Override protected void onBeforeStart(
 				ClientCallStreamObserver<ChainedRequest> chainedCallRequestObserver) {
 				processor.nestedCallResponseObserver = createNestedCallResponseObserver(
 						processor, parentCallResponseObserver, chainedCallRequestObserver);
@@ -248,8 +247,7 @@ public class SqueezedServer extends FrontendImplBase {
 				}
 			}
 
-			@Override
-			protected void onBeforeStart(
+			@Override protected void onBeforeStart(
 				ClientCallStreamObserver<NestedRequest> nestedCallRequestObserver) {
 				processor.parentCallRequestObserver = createParentCallRequestObserver(
 						processor, parentCallResponseObserver, nestedCallRequestObserver);
@@ -277,8 +275,7 @@ public class SqueezedServer extends FrontendImplBase {
 			parentCallResponseObserver
 		) {
 
-			@Override
-			protected void onInboundMessage(
+			@Override protected void onInboundMessage(
 				ParentRequest parentRequest,
 				OutboundSubstreamObserver individualObserver
 			) {
@@ -299,8 +296,7 @@ public class SqueezedServer extends FrontendImplBase {
 				);
 			}
 
-			@Override
-			public void onError(Throwable error) {
+			@Override public void onError(Throwable error) {
 				processor.abort();
 				System.out.println("SQUEEZED: client cancelled, aborting: " + error);
 			}
