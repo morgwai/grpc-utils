@@ -2,8 +2,8 @@
 
 Some helpful classes when developing gRPC services.<br/>
 <br/>
-**latest release: [3.2](https://search.maven.org/artifact/pl.morgwai.base/grpc-utils/3.2/jar)**
-([javadoc](https://javadoc.io/doc/pl.morgwai.base/grpc-utils/3.2))
+**latest release: [3.3](https://search.maven.org/artifact/pl.morgwai.base/grpc-utils/3.3/jar)**
+([javadoc](https://javadoc.io/doc/pl.morgwai.base/grpc-utils/3.3))
 
 
 ## MAIN USER CLASSES
