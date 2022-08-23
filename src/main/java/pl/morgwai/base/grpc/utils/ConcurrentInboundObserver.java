@@ -240,7 +240,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 					? super Throwable,
 					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
 				> onErrorHandler,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
 		this(outboundObserver, maxConcurrentMessages, onInboundMessageHandler, onErrorHandler,
 				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
@@ -297,7 +297,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	protected ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
 		this(outboundObserver, maxConcurrentMessages, null, null,
 				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
@@ -427,7 +427,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	final CallStreamObserver<OutboundT> outboundObserver;
 
-	CallStreamObserver<?> inboundControlObserver; // for request(n)
+	CallStreamObserver<ControlT> inboundControlObserver; // for request(n)
 	boolean halfClosed = false;
 	int idleCount;  // increased if outbound unready after completing a substream from onNext(...)
 	final Set<OutboundSubstreamObserver> activeOutboundSubstreams =
@@ -443,7 +443,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #beforeStart(ClientCallStreamObserver)} in case of the inbound being a response stream
 	 * from a previous chained client call.
 	 */
-	final void setInboundControlObserver(CallStreamObserver<?> inboundControlObserver) {
+	final void setInboundControlObserver(CallStreamObserver<ControlT> inboundControlObserver) {
 		if (this.inboundControlObserver != null) {
 			throw new IllegalStateException("inboundControlObserver already set");
 		}
