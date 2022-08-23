@@ -215,7 +215,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     {@code request(maxConcurrentMessages)} on the {@code inboundControlObserver} (passed via
 	 *     the param below or {@link #beforeStart(ClientCallStreamObserver)} param in case of
 	 *     {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 *     Consumer) client respose observers}). If message processing is dispatched to other
+	 *     Consumer) client response observers}). If message processing is dispatched to other
 	 *     threads, this will be the maximum number of inbound messages processed concurrently.
 	 *     It should correspond to server's concurrent processing capabilities.
 	 * @param onInboundMessageHandler stored on {@link #onInboundMessageHandler} to be called by
