@@ -47,14 +47,16 @@ public abstract class ConcurrentInboundObserverTest {
 	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 			newConcurrentInboundObserver(
 		int maxConcurrentMessages,
-		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
-		BiConsumer<Throwable, ConcurrentInboundObserver<
-				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
+		BiConsumer<? super InboundMessage, CallStreamObserver<? super OutboundMessage>>
+				messageHandler,
+		BiConsumer<
+					? super Throwable,
+					ConcurrentInboundObserver<
+						? super InboundMessage, ? super OutboundMessage, ? super OutboundMessage>>
+				onErrorHandler
 	);
 
-	BiConsumer<Throwable,
-			ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>>
-					newErrorHandler(Thread thread) {
+	BiConsumer<Throwable, ConcurrentInboundObserver<?, ?, ?>> newErrorHandler(Thread thread) {
 		return (error, thisObserver) -> thread.interrupt();
 	}
 
@@ -122,7 +124,7 @@ public abstract class ConcurrentInboundObserverTest {
 				individualObserver.onNext(new OutboundMessage(inboundMessage.id));
 				individualObserver.onCompleted();
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -153,7 +155,7 @@ public abstract class ConcurrentInboundObserverTest {
 				individualObserver.onNext(new OutboundMessage(inboundMessage.id));
 				individualObserver.onCompleted();
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -185,7 +187,7 @@ public abstract class ConcurrentInboundObserverTest {
 				}
 				individualObserver.onError(error);
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -217,7 +219,7 @@ public abstract class ConcurrentInboundObserverTest {
 				individualObserver.onNext(new OutboundMessage(inboundMessage.id));
 				individualObserver.onCompleted();
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 		holder[0] = testSubject;
 
@@ -255,7 +257,7 @@ public abstract class ConcurrentInboundObserverTest {
 					exceptionThrownHolder.notify();
 				}
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -296,7 +298,7 @@ public abstract class ConcurrentInboundObserverTest {
 					exceptionThrownHolder.notify();
 				}
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -337,7 +339,7 @@ public abstract class ConcurrentInboundObserverTest {
 					exceptionThrownHolder.notify();
 				}
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -416,7 +418,7 @@ public abstract class ConcurrentInboundObserverTest {
 					});
 				}
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -477,7 +479,7 @@ public abstract class ConcurrentInboundObserverTest {
 					individualObserver.onCompleted();
 				});
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -550,7 +552,7 @@ public abstract class ConcurrentInboundObserverTest {
 					}
 				);
 			},
-			newErrorHandler(Thread.currentThread())
+			newErrorHandler(Thread.currentThread())::accept
 		);
 
 		final var startMillis = System.currentTimeMillis();

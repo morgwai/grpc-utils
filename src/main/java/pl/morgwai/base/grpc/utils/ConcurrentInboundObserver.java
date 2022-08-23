@@ -235,13 +235,15 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		ServerCallStreamObserver<ControlT> inboundControlObserver
+		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
+				> onErrorHandler,
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		this(outboundObserver, maxConcurrentMessages, onInboundMessageHandler, onErrorHandler,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
 		setInboundControlObserver(inboundControlObserver);
 	}
 
@@ -295,10 +297,10 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	protected ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		ServerCallStreamObserver<ControlT> inboundControlObserver
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		this(outboundObserver, maxConcurrentMessages, null, null,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
 		setInboundControlObserver(inboundControlObserver);
 	}
 
@@ -348,16 +350,20 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
+		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
+				> onErrorHandler,
+		Consumer<ClientCallStreamObserver<? super ControlT>> onBeforeStartHandler
 	) {
 		this.outboundObserver = outboundObserver;
 		idleCount = maxConcurrentMessages;
-		this.onInboundMessageHandler = onInboundMessageHandler;
-		this.onErrorHandler = onErrorHandler;
-		this.onBeforeStartHandler = onBeforeStartHandler;
+		this.onInboundMessageHandler = onInboundMessageHandler != null
+				? onInboundMessageHandler::accept : null;
+		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
+		this.onBeforeStartHandler = onBeforeStartHandler != null
+				? onBeforeStartHandler::accept : null;
 		outboundObserver.setOnReadyHandler(this::onReady);
 	}
 
@@ -414,14 +420,14 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		int maxConcurrentMessages
 	) {
 		this(outboundObserver, maxConcurrentMessages, null, null,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
 	}
 
 
 
 	final CallStreamObserver<OutboundT> outboundObserver;
 
-	CallStreamObserver<ControlT> inboundControlObserver; // for request(n)
+	CallStreamObserver<?> inboundControlObserver; // for request(n)
 	boolean halfClosed = false;
 	int idleCount;  // increased if outbound unready after completing a substream from onNext(...)
 	final Set<OutboundSubstreamObserver> activeOutboundSubstreams =
@@ -437,7 +443,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #beforeStart(ClientCallStreamObserver)} in case of the inbound being a response stream
 	 * from a previous chained client call.
 	 */
-	final void setInboundControlObserver(CallStreamObserver<ControlT> inboundControlObserver) {
+	final void setInboundControlObserver(CallStreamObserver<?> inboundControlObserver) {
 		if (this.inboundControlObserver != null) {
 			throw new IllegalStateException("inboundControlObserver already set");
 		}

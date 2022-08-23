@@ -35,9 +35,11 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
-		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
+		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
+				> onErrorHandler,
 		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
 		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
@@ -67,7 +69,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		int maxConcurrentMessages
 	) {
 		super(outboundObserver, maxConcurrentMessages, null, null,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+				(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
 		buffer = createBuffer(outboundObserver);
 	}
 
@@ -78,10 +80,12 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<InboundT, CallStreamObserver<OutboundT>> inboundMessageHandler,
-		BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> preStartHandler
+		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
+				> onErrorHandler,
+		Consumer<ClientCallStreamObserver<? super ControlT>> preStartHandler
 	) {
 		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
 				preStartHandler);

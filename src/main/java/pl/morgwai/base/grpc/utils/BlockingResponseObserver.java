@@ -86,16 +86,16 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	 * Initializes {@link #responseHandler} and {@link #beforeStartHandler}.
 	 */
 	public BlockingResponseObserver(
-			Consumer<ResponseT> responseHandler,
-			Consumer<ClientCallStreamObserver<RequestT>> beforeStartHandler) {
-		this.responseHandler = responseHandler;
-		this.beforeStartHandler = beforeStartHandler;
+			Consumer<? super ResponseT> responseHandler,
+			Consumer<ClientCallStreamObserver<? super RequestT>> beforeStartHandler) {
+		this.responseHandler = responseHandler != null ? responseHandler::accept: null;
+		this.beforeStartHandler = beforeStartHandler != null ? beforeStartHandler::accept : null;
 	}
 
 	/**
 	 * Initializes {@link #responseHandler}.
 	 */
-	public BlockingResponseObserver(Consumer<ResponseT> responseHandler) {
+	public BlockingResponseObserver(Consumer<? super ResponseT> responseHandler) {
 		this(responseHandler, null);
 	}
 
