@@ -67,7 +67,7 @@ public class BackendServer extends BackendImplBase {
 				System.out.println("BACKEND: client cancelled nested call");
 			}
 		);
-		return new ConcurrentInboundObserver<>(
+		return ConcurrentInboundObserver.newSimpleConcurrentServerRequestObserver(
 			responseObserver,
 			maxNestedCallConcurrentRequests,
 			(request, individualObserver) -> executor.execute(
@@ -88,8 +88,7 @@ public class BackendServer extends BackendImplBase {
 			(error, thisObserver) -> {
 				processor.abort();
 				System.out.println("BACKEND: client cancelled nested call: " + error);
-			},
-			responseObserver
+			}
 		);
 	}
 
