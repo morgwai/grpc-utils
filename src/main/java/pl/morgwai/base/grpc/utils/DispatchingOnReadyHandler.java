@@ -106,7 +106,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * throwing.</p>
 	 */
 	public DispatchingOnReadyHandler(
-		CallStreamObserver<MessageT> outboundObserver,
+		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
 		IntFunction<Boolean> producerHasMoreMessagesIndicator,
@@ -126,7 +126,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * overridden.
 	 */
 	protected DispatchingOnReadyHandler(
-		CallStreamObserver<MessageT> outboundObserver,
+		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks
 	) {
@@ -144,7 +144,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 *     constructor for param descriptions
 	 */
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
-		CallStreamObserver<MessageT> outboundObserver,
+		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
 		IntFunction<Boolean> producerHasMoreMessagesIndicator,
@@ -169,7 +169,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 */
 	@SafeVarargs
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
-		CallStreamObserver<MessageT> outboundObserver,
+		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		Iterator<MessageT>... messageProducers
 	) {
@@ -187,7 +187,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * {@link #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction, IntFunction)}.
 	 */
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
-		CallStreamObserver<MessageT> outboundObserver,
+		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		Supplier<Boolean> producerHasMoreMessagesIndicator,
 		Supplier<MessageT> messageProducer
@@ -203,7 +203,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 
-	final CallStreamObserver<MessageT> outboundObserver;
+	final CallStreamObserver<? super MessageT> outboundObserver;
 	final Executor taskExecutor;
 	final int numberOfTasks;
 
