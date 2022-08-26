@@ -272,24 +272,21 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 		@Override public void run() {
-			boolean ready;
 			synchronized (lock) {
-				ready = outboundObserver.isReady();
+				taskRunning[taskNumber] = outboundObserver.isReady();
+				if ( !taskRunning[taskNumber]) return;
 			}
-			while (ready && producerHasMoreMessages(taskNumber)) {
+			while (producerHasMoreMessages(taskNumber)) {
 				try {
 					final var result = produceNextMessage(taskNumber);
 					synchronized (lock) {
 						outboundObserver.onNext(result);
-						ready = outboundObserver.isReady();
+						taskRunning[taskNumber] = outboundObserver.isReady();
+						if ( !taskRunning[taskNumber]) return;
 					}
 				} catch (NoSuchElementException e) {
 					break;  // treat NoSuchElementException same as !hasNext()
 				}
-			}
-			if ( !ready) {
-				taskRunning[taskNumber] = false;
-				return;
 			}
 			// taskRunning[taskNumber] will be left true to not respawn completed/aborted tasks
 			synchronized (lock) {

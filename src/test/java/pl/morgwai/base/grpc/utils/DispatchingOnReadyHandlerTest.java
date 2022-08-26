@@ -60,11 +60,13 @@ public class DispatchingOnReadyHandlerTest {
 
 
 
-	@Test
-	public void testSingleThread() throws InterruptedException {
-		final var numberOfResponses = 10;
-		outboundObserver.outputBufferSize = 3;
-		outboundObserver.unreadyDurationMillis = 5L;
+	public void testSingleThread(
+		int numberOfResponses,
+		int outputBufferSize,
+		long unreadyDurationMillis
+	) throws InterruptedException {
+		outboundObserver.outputBufferSize = outputBufferSize;
+		outboundObserver.unreadyDurationMillis = unreadyDurationMillis;
 		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
@@ -86,6 +88,16 @@ public class DispatchingOnReadyHandlerTest {
 				userExecutor.getUncaughtTaskExceptions().isEmpty());
 		verifyExecutor(userExecutor);
 		performStandardVerifications();
+	}
+
+	@Test
+	public void testSingleThreadObserverSometimesUnreadyForFewMs() throws InterruptedException {
+		testSingleThread(100, 5, 3L);
+	}
+
+	@Test
+	public void testSingleThreadObserverOftenUnreadyForSplitMs() throws InterruptedException {
+		testSingleThread(2000, 1, 0L);
 	}
 
 

@@ -159,6 +159,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
 				ready = false;
 				log.fine("marked response observer unready");
+				if (unreadyDurationMillis <= 0) return;
 				grpcInternalExecutor.execute(new Runnable() {
 
 					@Override public void run() { markObserverReady(unreadyDurationMillis); }
@@ -172,7 +173,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	}
 
 	private void markObserverReady(long delayMillis) {
-		try {
+		if (delayMillis > 0L) try {
 			Thread.sleep(delayMillis);
 		} catch (InterruptedException ignored) {}
 		synchronized (listenerLock) {
@@ -192,6 +193,14 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
+			if ( !ready && unreadyDurationMillis <= 0) {
+				grpcInternalExecutor.execute(new Runnable() {
+
+					@Override public void run() { markObserverReady(0); }
+
+					@Override public String toString() { return "immediateReadyMarker"; }
+				});
+			}
 			return ready;
 		} finally {
 			concurrencyGuard.unlock();
