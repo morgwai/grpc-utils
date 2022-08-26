@@ -122,10 +122,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * Called by the default implementation of
 	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
 	 * onInboundMessage(...)}. Initialized via {@code onInboundMessageHandler} param of
-	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, ServerCallStreamObserver) "server request observer"} and
-	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, Consumer) "client response observer"} constructors.
+	 * {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * ServerCallStreamObserver) newConcurrentServerRequestObserver(...)},
+	 * {@link #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int, BiConsumer,
+	 * BiConsumer) newSimpleConcurrentServerRequestObserver(...)} and
+	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * Consumer) newConcurrentClientResponseObserver(...)} "constructors".
 	 */
 	protected final BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler;
 
@@ -143,10 +145,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Called by the default implementation of {@link #onError(Throwable)}.
 	 * Initialized via {@code onErrorHandler} param of
-	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, ServerCallStreamObserver) "server request observer"} and
-	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, Consumer) "client response observer"} constructors.
+	 * {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * ServerCallStreamObserver) newConcurrentServerRequestObserver(...)},
+	 * {@link #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int, BiConsumer,
+	 * BiConsumer) newSimpleConcurrentServerRequestObserver(...)} and
+	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * Consumer) newConcurrentClientResponseObserver(...)} "constructors".
 	 * The second parameter is a reference to the calling inbound observer, it may be used to call
 	 * {@link #reportErrorAfterTasksAndInboundComplete(Throwable)} or {@link #onCompleted()}.
 	 */
@@ -169,8 +173,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Called by the default implementation of {@link #onBeforeStart(ClientCallStreamObserver)
 	 * beforeStart(inboundControlObserver)}. Initialized via {@code onBeforeStartHandler} param of
-	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, Consumer) "client response observer"} constructor.
+	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * Consumer) newConcurrentClientResponseObserver(...)} "constructor".
 	 */
 	protected final Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler;
 
@@ -344,8 +348,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * request observer obtained from
 	 * {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver) beforeStart(...)}'s
 	 * param.</p>
-	 * @see #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 * ServerCallStreamObserver) the other constructor for the description of the params
+	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * ServerCallStreamObserver) the other "constructor" for the description of the params
 	 */
 	protected ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
@@ -422,8 +426,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     {@link #onBeforeStart(ClientCallStreamObserver)} called by
 	 *     {@link #beforeStart(ClientCallStreamObserver)}. May be empty in case of end-client calls
 	 *     not nested in any server calls.
-	 * @see #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 * ServerCallStreamObserver) the other constructor for the description of the remaining params
+	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * ServerCallStreamObserver) the other "constructor" for the description of the remaining params
 	 */
 	public static <InboundT, OutboundT, ControlT>
 	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
@@ -491,8 +495,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     backendStub.nestedRPC(nestedCallResponseObserver);
 	 *     return parentCallRequestObserverHolder.get();
 	 * }</pre>
-	 * @see #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer, Consumer)
-	 * the other constructor for the descriptions of params
+	 * @see #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * Consumer) the other "constructor" for the descriptions of params
 	 */
 	protected ConcurrentInboundObserver(
 		CallStreamObserver<OutboundT> outboundObserver,
