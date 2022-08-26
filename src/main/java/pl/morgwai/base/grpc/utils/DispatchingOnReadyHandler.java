@@ -240,9 +240,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 */
 	public void run() {
 		synchronized (lock) {
-			if (completedTaskCount == numberOfTasks) {
-				return;
-			}
+			if (completedTaskCount == numberOfTasks) return;
 			for (int taskNumber = 0; taskNumber < numberOfTasks; taskNumber++) {
 				// it may happen that responseObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
@@ -272,30 +270,24 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 		@Override public void run() {
-			synchronized (lock) {
-				taskRunning[taskNumber] = outboundObserver.isReady();
-				if ( !taskRunning[taskNumber]) return;
-			}
-			while (producerHasMoreMessages(taskNumber)) {
-				try {
-					final var result = produceNextMessage(taskNumber);
+			try {
+				while (producerHasMoreMessages(taskNumber)) {
 					synchronized (lock) {
-						outboundObserver.onNext(result);
 						taskRunning[taskNumber] = outboundObserver.isReady();
 						if ( !taskRunning[taskNumber]) return;
 					}
-				} catch (NoSuchElementException e) {
-					break;  // treat NoSuchElementException same as !hasNext()
+					final var result = produceNextMessage(taskNumber);  // outside of lock
+					synchronized (lock) {
+						outboundObserver.onNext(result);
+					}
 				}
-			}
+			} catch (NoSuchElementException e) {/* treat it same as !hasNext() */}
+
 			// taskRunning[taskNumber] will be left true to not respawn completed/aborted tasks
 			synchronized (lock) {
 				if (++completedTaskCount < numberOfTasks) return;
-				if (errorToReport == null) {
-					outboundObserver.onCompleted();
-				} else {
-					outboundObserver.onError(errorToReport);
-				}
+				if (errorToReport == null) outboundObserver.onCompleted();
+						else outboundObserver.onError(errorToReport);
 			}
 		}
 
