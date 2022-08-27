@@ -24,7 +24,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	final OrderedConcurrentOutputBuffer<OutboundT> buffer;
+	final OrderedConcurrentOutputBuffer<? super OutboundT> buffer;
 
 
 
@@ -34,14 +34,14 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	@Deprecated(forRemoval = true)
 	public OrderedConcurrentInboundObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
 		BiConsumer<
 					? super Throwable,
 					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
 				> onErrorHandler,
-		ServerCallStreamObserver<ControlT> inboundControlObserver
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
 				inboundControlObserver);
@@ -55,14 +55,14 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT, ControlT>
 	OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newOrderedConcurrentServerRequestObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
 		BiConsumer<
 					? super Throwable,
 					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
 				> onErrorHandler,
-		ServerCallStreamObserver<ControlT> inboundControlObserver
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		return new OrderedConcurrentInboundObserver<>(
 			outboundObserver,
@@ -80,7 +80,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT>
 	OrderedConcurrentInboundObserver<InboundT, OutboundT, OutboundT>
 	newSimpleOrderedConcurrentServerRequestObserver(
-		ServerCallStreamObserver<OutboundT> outboundObserver,
+		ServerCallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
 		BiConsumer<
@@ -103,9 +103,9 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * ServerCallStreamObserver) super}.
 	 */
 	protected OrderedConcurrentInboundObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		ServerCallStreamObserver<ControlT> inboundControlObserver
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		super(outboundObserver, maxConcurrentMessages, null, null, inboundControlObserver);
 		buffer = createBuffer(outboundObserver);
@@ -117,7 +117,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	@Deprecated(forRemoval = true)
 	public OrderedConcurrentInboundObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
 		BiConsumer<
@@ -138,7 +138,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT, ControlT>
 	OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newOrderedConcurrentClientResponseObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
 		BiConsumer<
@@ -161,7 +161,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * super}.
 	 */
 	protected OrderedConcurrentInboundObserver(
-		CallStreamObserver<OutboundT> outboundObserver,
+		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages
 	) {
 		super(outboundObserver, maxConcurrentMessages, null, null,
@@ -169,11 +169,11 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		buffer = createBuffer(outboundObserver);
 	}
 
-	private OrderedConcurrentOutputBuffer<OutboundT> createBuffer(
-			CallStreamObserver<OutboundT> responseObserver) {
+	private <T> OrderedConcurrentOutputBuffer<T> createBuffer(
+			CallStreamObserver<T> responseObserver) {
 		return new OrderedConcurrentOutputBuffer<>(new OutputStream<>() {
 
-			@Override public void write(OutboundT message) {
+			@Override public void write(T message) {
 				// other bucket threads may be calling isReady(), onError() etc
 				synchronized (lock) {
 					responseObserver.onNext(message);
@@ -212,11 +212,11 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public class OutboundBucketObserver extends OutboundSubstreamObserver {
 
-		final OutputStream<OutboundT> bucket;
+		final OutputStream<? super OutboundT> bucket;
 
 
 
-		protected OutboundBucketObserver(OutputStream<OutboundT> bucket) {
+		protected OutboundBucketObserver(OutputStream<? super OutboundT> bucket) {
 			this.bucket = bucket;
 		}
 
