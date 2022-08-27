@@ -25,7 +25,7 @@ public class Client {
 	public static void main(String[] args) throws Exception {
 		// command line arguments
 		var squeezedTarget = args.length > 0 ? args[0] : null;
-		final var numberOfMessages = args.length > 1 ? Integer.parseInt(args[1]) : 1000;
+		final var numberOfMessagesRaw = args.length > 1 ? Integer.parseInt(args[1]) : 1000;
 		final var messageSizeKB = args.length > 2 ? Integer.parseInt(args[2]) : 4;
 		final var pauseRate = args.length > 3 ? Integer.parseInt(args[3]) : 200;
 		final var pauseMillis = args.length > 4 ? Long.parseLong(args[4]) : 0L;
@@ -87,11 +87,14 @@ public class Client {
 		}));
 
 		// create response observer
+		final var numberOfMessages = numberOfMessagesRaw > 0
+				? numberOfMessagesRaw : Integer.MAX_VALUE;
 		final var responseCounter = new AtomicInteger(0);
 		final var requestCounter = new AtomicInteger(0);
 		final var message = "################################".repeat(32 * messageSizeKB);
-		final var responseObserver =
-				new BlockingResponseObserver<ParentRequest, ParentResponse>() {
+		final var responseObserver = new BlockingResponseObserver<ParentRequest, ParentResponse>() {
+
+			boolean completed = false;
 
 			@Override public void onNext(ParentResponse response) {
 				if (responseCounter.incrementAndGet() % pauseRate == 0) {
@@ -108,8 +111,7 @@ public class Client {
 				super.beforeStart(requestObserver);
 				requestObserver.disableAutoRequestWithInitial(pauseRate);
 				requestObserver.setOnReadyHandler(() -> {
-					while ((requestCounter.get() < numberOfMessages || numberOfMessages == 0)
-							&& requestObserver.isReady()) {
+					while (requestCounter.get() < numberOfMessages && requestObserver.isReady()) {
 						int id = requestCounter.incrementAndGet();
 						requestObserver.onNext(ParentRequest.newBuilder()
 							.setMessageId(id)
@@ -119,10 +121,11 @@ public class Client {
 							System.out.println("CLIENT: sent " + id + " requests");
 						}
 					}
-					if (requestCounter.get() == numberOfMessages) {
-						System.out.println(
-								"CLIENT: sent " + requestCounter.get() + " requests total");
+					if (requestCounter.get() == numberOfMessages && !completed) {
+						System.out.println("CLIENT: completed, sent " + requestCounter.get()
+								+ " requests total");
 						requestObserver.onCompleted();
+						completed = true;
 					}
 				});
 			}
