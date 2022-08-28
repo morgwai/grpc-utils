@@ -142,33 +142,27 @@ public class SqueezedServer extends FrontendImplBase {
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver
 	) {
-		return new ConcurrentInboundObserver<>(
+		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
 			parentCallResponseObserver,
-			maxConcurrentChainedResponses
-		) {
+			maxConcurrentChainedResponses,
 
-			@Override protected void onInboundMessage(
-				ChainedResponse chainedResponse,
-				OutboundSubstreamObserver individualObserver
-			) {
-				executor.execute(
-					() -> {
-						try {
-							final var parentResponse = processor.postProcess(chainedResponse);
-							individualObserver.onNext(parentResponse);
-							individualObserver.onCompleted();
-						} catch (InterruptedException e) {
-							System.out.println("SQUEEZED: postProcessing aborted");
-						} catch (Throwable t) {
-							processor.abort();
-							reportErrorToParent("postProcessing", t, processor);
-							throw t;
-						}
+			(chainedResponse, individualObserver) -> executor.execute(
+				() -> {
+					try {
+						final var parentResponse = processor.postProcess(chainedResponse);
+						individualObserver.onNext(parentResponse);
+						individualObserver.onCompleted();
+					} catch (InterruptedException e) {
+						System.out.println("SQUEEZED: postProcessing aborted");
+					} catch (Throwable t) {
+						processor.abort();
+						reportErrorToParent("postProcessing", t, processor);
+						throw t;
 					}
-				);
-			}
+				}
+			),
 
-			@Override public void onError(Throwable error) {
+			(error, thisObserver) -> {
 				if (error instanceof StatusRuntimeException
 					&& ((StatusRuntimeException) error).getStatus().getCode() == Code.CANCELLED
 				) {
@@ -177,18 +171,20 @@ public class SqueezedServer extends FrontendImplBase {
 				} else {
 					System.out.println("SQUEEZED: error during chained, waiting for ongoing tasks"
 							+ " and forwarding to parent: " + error);
-					reportErrorAfterTasksAndInboundComplete(error);
-					onCompleted();
+					thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+					thisObserver.onCompleted();
 				}
-			}
+			},
 
-			@Override protected void onBeforeStart(
-				ClientCallStreamObserver<ChainedRequest> chainedCallRequestObserver) {
+			(chainedCallRequestObserver) -> {
 				processor.nestedCallResponseObserver = createNestedCallResponseObserver(
-						processor, parentCallResponseObserver, chainedCallRequestObserver);
+					processor,
+					parentCallResponseObserver,
+					chainedCallRequestObserver
+				);
 				backendConnector.nested(processor.nestedCallResponseObserver);
 			}
-		};
+		);
 	}
 
 
@@ -202,7 +198,7 @@ public class SqueezedServer extends FrontendImplBase {
 			createNestedCallResponseObserver(
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver,
-		ClientCallStreamObserver<ChainedRequest> chainedCallRequestObserver
+		ClientCallStreamObserver<? super ChainedRequest> chainedCallRequestObserver
 	) {
 		return new ConcurrentInboundObserver<>(
 			chainedCallRequestObserver,
@@ -269,38 +265,33 @@ public class SqueezedServer extends FrontendImplBase {
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver,
 		ClientCallStreamObserver<NestedRequest> nestedCallRequestObserver
 	) {
-		return new ConcurrentInboundObserver<>(
+		return ConcurrentInboundObserver.newConcurrentServerRequestObserver(
 			nestedCallRequestObserver,
 			maxConcurrentParentRequests,
-			parentCallResponseObserver
-		) {
 
-			@Override protected void onInboundMessage(
-				ParentRequest parentRequest,
-				OutboundSubstreamObserver individualObserver
-			) {
-				executor.execute(
-					() -> {
-						try {
-							final var nestedRequest = processor.preProcess(parentRequest);
-							individualObserver.onNext(nestedRequest);
-							individualObserver.onCompleted();
-						} catch (InterruptedException e) {
-							System.out.println("SQUEEZED: preProcessing aborted");
-						} catch (Throwable t) {
-							processor.abort();
-							reportErrorToParent("preProcessing", t, processor);
-							throw t;
-						}
+			(parentRequest, individualObserver) -> executor.execute(
+				() -> {
+					try {
+						final var nestedRequest = processor.preProcess(parentRequest);
+						individualObserver.onNext(nestedRequest);
+						individualObserver.onCompleted();
+					} catch (InterruptedException e) {
+						System.out.println("SQUEEZED: preProcessing aborted");
+					} catch (Throwable t) {
+						processor.abort();
+						reportErrorToParent("preProcessing", t, processor);
+						throw t;
 					}
-				);
-			}
+				}
+			),
 
-			@Override public void onError(Throwable error) {
+			(error, thisObserver) -> {
 				processor.abort();
 				System.out.println("SQUEEZED: client cancelled, aborting: " + error);
-			}
-		};
+			},
+
+			parentCallResponseObserver
+		);
 	}
 
 
