@@ -59,6 +59,8 @@ public class SqueezedServer extends FrontendImplBase {
 	final long postProcessingMillis;
 	final int maxConcurrentChainedResponses;
 
+	final int threadPoolSize;
+
 
 
 	/**
@@ -111,8 +113,7 @@ public class SqueezedServer extends FrontendImplBase {
 	 * can be returned by this method.</p>
 	 */
 	@Override
-	public StreamObserver<ParentRequest> parent(
-			StreamObserver<ParentResponse> responseObserver) {
+	public StreamObserver<ParentRequest> parent(StreamObserver<ParentResponse> responseObserver) {
 		System.out.println("SQUEEZED: got call");
 		final var parentCallResponseObserver =
 				(ServerCallStreamObserver<ParentResponse>) responseObserver;
@@ -138,7 +139,7 @@ public class SqueezedServer extends FrontendImplBase {
 	 * call.
 	 */
 	ConcurrentInboundObserver<ChainedResponse, ParentResponse, ChainedRequest>
-			createChainedCallResponseObserver(
+	createChainedCallResponseObserver(
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver
 	) {
@@ -195,7 +196,7 @@ public class SqueezedServer extends FrontendImplBase {
 	 * call.
  	 */
 	ConcurrentInboundObserver<NestedResponse, ChainedRequest, NestedRequest>
-			createNestedCallResponseObserver(
+	createNestedCallResponseObserver(
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver,
 		ClientCallStreamObserver<ChainedRequest> chainedCallRequestObserver
@@ -260,7 +261,7 @@ public class SqueezedServer extends FrontendImplBase {
 	 * {@link #parent(StreamObserver) parent(...) RPC method}.
 	 */
 	ConcurrentInboundObserver<ParentRequest, NestedRequest, ParentResponse>
-			createParentCallRequestObserver(
+	createParentCallRequestObserver(
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver,
 		ClientCallStreamObserver<NestedRequest> nestedCallRequestObserver
@@ -339,10 +340,7 @@ public class SqueezedServer extends FrontendImplBase {
 	class ParentCallProcessorMock extends ParentCallProcessor {
 
 		final AtomicBoolean aborted = new AtomicBoolean(false);
-		private final Set<Thread> activeTasks = ConcurrentHashMap.newKeySet(
-				maxConcurrentParentRequests
-				+ (maxConcurrentNestedResponses * midProcessingSubTaskNumber)
-				+ maxConcurrentChainedResponses);
+		private final Set<Thread> activeTasks = ConcurrentHashMap.newKeySet(threadPoolSize);
 
 
 
@@ -458,12 +456,12 @@ public class SqueezedServer extends FrontendImplBase {
 		this.postProcessingMillis = postProcessingMillis;
 		this.maxConcurrentChainedResponses = maxConcurrentChainedResponses;
 
-		final var threadNumber =
+		threadPoolSize =
 				maxConcurrentParentRequests
 				+ (maxConcurrentNestedResponses * midProcessingSubTaskNumber)
 				+ maxConcurrentChainedResponses;
 		executor = new ThreadPoolExecutor(
-				threadNumber, threadNumber, 0L, TimeUnit.DAYS, new LinkedBlockingQueue<>());
+				threadPoolSize, threadPoolSize, 0L, TimeUnit.DAYS, new LinkedBlockingQueue<>());
 		backendChannel = ManagedChannelBuilder
 			.forTarget(backendTarget)
 			.usePlaintext()
