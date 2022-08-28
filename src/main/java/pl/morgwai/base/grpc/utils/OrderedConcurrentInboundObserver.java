@@ -24,7 +24,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	final OrderedConcurrentOutputBuffer<? super OutboundT> buffer;
+	final OrderedConcurrentOutputBuffer<OutboundT> buffer;
 
 
 
@@ -36,14 +36,12 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
-				> onErrorHandler,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
-		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
+		super(outboundObserver, maxConcurrentMessages, onInboundMessageHandler, onErrorHandler,
 				inboundControlObserver);
 		buffer = createBuffer(outboundObserver);
 	}
@@ -57,11 +55,9 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newOrderedConcurrentServerRequestObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
-				> onErrorHandler,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
 		return new OrderedConcurrentInboundObserver<>(
@@ -82,12 +78,9 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newSimpleOrderedConcurrentServerRequestObserver(
 		ServerCallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<
-							? super InboundT, ? super OutboundT, ? super OutboundT>
-				> onErrorHandler
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>>
+				onErrorHandler
 	) {
 		return newOrderedConcurrentServerRequestObserver(
 			outboundObserver,
@@ -119,15 +112,13 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public OrderedConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> inboundMessageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
-				> onErrorHandler,
-		Consumer<ClientCallStreamObserver<? super ControlT>> preStartHandler
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
+		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
 	) {
-		super(outboundObserver, maxConcurrentMessages, inboundMessageHandler, onErrorHandler,
-				preStartHandler);
+		super(outboundObserver, maxConcurrentMessages, onInboundMessageHandler, onErrorHandler,
+				onBeforeStartHandler);
 		buffer = createBuffer(outboundObserver);
 	}
 
@@ -140,12 +131,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newOrderedConcurrentClientResponseObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<? super OutboundT>> onInboundMessageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<? super InboundT, ? super OutboundT, ? super ControlT>
-				> onErrorHandler,
-		Consumer<ClientCallStreamObserver<? super ControlT>> onBeforeStartHandler
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
+		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
 	) {
 		return new OrderedConcurrentInboundObserver<>(
 			outboundObserver,
@@ -165,15 +154,15 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		int maxConcurrentMessages
 	) {
 		super(outboundObserver, maxConcurrentMessages, null, null,
-			(Consumer<ClientCallStreamObserver<? super ControlT>>) null);
+				(Consumer<ClientCallStreamObserver<ControlT>>) null);
 		buffer = createBuffer(outboundObserver);
 	}
 
-	private <T> OrderedConcurrentOutputBuffer<T> createBuffer(
-			CallStreamObserver<T> responseObserver) {
+	private OrderedConcurrentOutputBuffer<OutboundT> createBuffer(
+			CallStreamObserver<? super OutboundT> responseObserver) {
 		return new OrderedConcurrentOutputBuffer<>(new OutputStream<>() {
 
-			@Override public void write(T message) {
+			@Override public void write(OutboundT message) {
 				// other bucket threads may be calling isReady(), onError() etc
 				synchronized (lock) {
 					responseObserver.onNext(message);
@@ -212,11 +201,11 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public class OutboundBucketObserver extends OutboundSubstreamObserver {
 
-		final OutputStream<? super OutboundT> bucket;
+		final OutputStream<OutboundT> bucket;
 
 
 
-		protected OutboundBucketObserver(OutputStream<? super OutboundT> bucket) {
+		protected OutboundBucketObserver(OutputStream<OutboundT> bucket) {
 			this.bucket = bucket;
 		}
 

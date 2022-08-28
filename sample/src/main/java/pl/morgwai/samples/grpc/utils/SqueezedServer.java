@@ -198,7 +198,7 @@ public class SqueezedServer extends FrontendImplBase {
 			createNestedCallResponseObserver(
 		ParentCallProcessor processor,
 		ServerCallStreamObserver<ParentResponse> parentCallResponseObserver,
-		ClientCallStreamObserver<? super ChainedRequest> chainedCallRequestObserver
+		ClientCallStreamObserver<ChainedRequest> chainedCallRequestObserver
 	) {
 		return new ConcurrentInboundObserver<>(
 			chainedCallRequestObserver,

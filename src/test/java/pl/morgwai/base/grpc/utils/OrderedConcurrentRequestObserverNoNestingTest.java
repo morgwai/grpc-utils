@@ -16,13 +16,9 @@ public class OrderedConcurrentRequestObserverNoNestingTest
 	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 			newConcurrentInboundObserver(
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundMessage, CallStreamObserver<? super OutboundMessage>>
-				messageHandler,
-		BiConsumer<
-					? super Throwable,
-					ConcurrentInboundObserver<
-						? super InboundMessage, ? super OutboundMessage, ? super OutboundMessage>>
-				onErrorHandler
+		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
+		BiConsumer<Throwable, ConcurrentInboundObserver<
+				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return new OrderedConcurrentInboundObserver<>(
 			outboundObserver.asServerCallResponseObserver(),
