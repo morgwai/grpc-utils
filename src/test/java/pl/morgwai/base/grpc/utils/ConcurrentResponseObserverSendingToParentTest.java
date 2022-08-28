@@ -20,7 +20,7 @@ public class ConcurrentResponseObserverSendingToParentTest
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
-		return new ConcurrentInboundObserver<>(
+		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
 			outboundObserver.asServerCallResponseObserver(),
 			maxConcurrentMessages,
 			messageHandler,

@@ -20,12 +20,11 @@ public class OrderedConcurrentRequestObserverNoNestingTest
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
-		return new OrderedConcurrentInboundObserver<>(
+		return OrderedConcurrentInboundObserver.newSimpleOrderedConcurrentServerRequestObserver(
 			outboundObserver.asServerCallResponseObserver(),
 			maxConcurrentMessages,
 			messageHandler,
-			onErrorHandler,
-			outboundObserver.asServerCallResponseObserver()
+			onErrorHandler
 		);
 	}
 }
