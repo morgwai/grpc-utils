@@ -194,12 +194,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	/**
-	 * Use {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, ServerCallStreamObserver)} instead.
-	 */
-	@Deprecated(forRemoval = true)  // this constructor will be made package-private in the future
-	public ConcurrentInboundObserver(
+	ConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
@@ -375,12 +370,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	/**
-	 * Use {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, Consumer)} instead.
-	 */
-	@Deprecated(forRemoval = true)  // this constructor will be made package-private in the future
-	public ConcurrentInboundObserver(
+	ConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,

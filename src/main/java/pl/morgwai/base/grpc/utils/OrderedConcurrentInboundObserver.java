@@ -28,12 +28,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	/**
-	 * Use {@link #newOrderedConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, ServerCallStreamObserver)} instead.
-	 */
-	@Deprecated(forRemoval = true)
-	public OrderedConcurrentInboundObserver(
+	OrderedConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
@@ -104,12 +99,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		buffer = createBuffer(outboundObserver);
 	}
 
-	/**
-	 * Use {@link #newOrderedConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, Consumer)} instead.
-	 */
-	@Deprecated(forRemoval = true)
-	public OrderedConcurrentInboundObserver(
+	OrderedConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
