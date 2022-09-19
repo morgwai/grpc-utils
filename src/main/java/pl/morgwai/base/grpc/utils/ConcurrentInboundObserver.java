@@ -546,11 +546,28 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		}
 		synchronized (lock) {
 			if (idleCount > 0 && !halfClosed) {
-				inboundControlObserver.request(idleCount);
-				idleCount = 0;
+				final var numberToRequest =
+						Math.min(idleCount, getCurrentProcessingCapability(idleCount));
+				if (numberToRequest > 0) {
+					inboundControlObserver.request(numberToRequest);
+					idleCount -= numberToRequest;
+				}
 			}
 		}
-		// TODO: add routines for checking processing resources availability
+	}
+
+	/**
+	 * Returns the number of inbound messages that the server would currently be able to process
+	 * without a delay. Called when {@link CallStreamObserver#setOnReadyHandler(Runnable)
+	 * outboundObserver becomes ready} to determine how many inboud messages to request.
+	 * <p>
+	 * The default implementation returns {@code currentIdleCount}.</p>
+	 *
+	 * @param currentIdleCount maximum number of inbound messages that will be requested even if
+	 *     this method returns a bigger number.
+	 */
+	protected int getCurrentProcessingCapability(int currentIdleCount) {
+		return currentIdleCount;
 	}
 
 
