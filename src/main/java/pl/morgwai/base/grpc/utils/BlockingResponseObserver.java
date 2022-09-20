@@ -100,8 +100,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	}
 
 	/**
-	 * Constructor for those who prefer to override methods rather than provide lambdas as params.
-	 * At least {@link #onNext(Object)} must be overridden.
+	 * Constructor for those who prefer to override methods rather than provide functional handlers
+	 * as params. At least {@link #onNext(Object)} must be overridden.
 	 */
 	protected BlockingResponseObserver() { this(null, null); }
 

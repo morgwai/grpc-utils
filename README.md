@@ -8,17 +8,17 @@ Some helpful classes when developing gRPC services.<br/>
 
 ## MAIN USER CLASSES
 
-### [DispatchingOnReadyHandler](src/main/java/pl/morgwai/base/grpc/utils/DispatchingOnReadyHandler.java)
-Streams messages to an outbound `CallStreamObserver` from multiple sources in separate threads with respect to flow-control. Useful in sever methods when 1 request message can result in multiple response messages that can be produced concurrently in separate tasks.
-
 ### [ConcurrentInboundObserver](src/main/java/pl/morgwai/base/grpc/utils/ConcurrentInboundObserver.java)
-Base class for inbound `StreamObserver`s (server request observers for RPC method implementations and client response observers for nested or chained calls), that may dispatch message processing to multiple threads: handles all the synchronization and manual flow-control.
+Base class for inbound `StreamObservers` (server method request observers and client response observers), that pass results to some outboundObserver and may dispatch message processing to other threads. Handles all the synchronization and manual flow-control.
+
+### [DispatchingOnReadyHandler](src/main/java/pl/morgwai/base/grpc/utils/DispatchingOnReadyHandler.java)
+Streams messages to an outbound `CallStreamObserver` from multiple concurrent tasks with respect to flow-control. Useful when processing of 1 inbound message may result in multiple outbound messages that can be produced concurrently in multiple threads.
 
 ### [OrderedConcurrentInboundObserver](src/main/java/pl/morgwai/base/grpc/utils/OrderedConcurrentInboundObserver.java)
 A `ConcurrentInboundObserver` that uses [OrderedConcurrentOutputBuffer](https://github.com/morgwai/java-utils/blob/master/src/main/java/pl/morgwai/base/concurrent/OrderedConcurrentOutputBuffer.java) to ensure that outbound messages are sent in the order corresponding to the inbound messages order.
 
 ### [BlockingResponseObserver](src/main/java/pl/morgwai/base/grpc/utils/BlockingResponseObserver.java)
-A `ClientResponseObserver`, that blocks until response is completed with either `onCompleted()` or `onError(error)`.
+A `ClientResponseObserver`, that blocks until the response stream is completed with either `onCompleted()` or `onError(error)`.
 
 
 ## EXAMPLES

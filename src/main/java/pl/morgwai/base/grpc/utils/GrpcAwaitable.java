@@ -16,8 +16,8 @@ public interface GrpcAwaitable {
 
 
 	/**
-	 * Creates {@link Awaitable.WithUnit} of
-	 * {@link Server#awaitTermination(long, TimeUnit) termination} of {@code server}.
+	 * Creates {@link Awaitable} of
+	 * {@link Server#awaitTermination(long, TimeUnit) server termination}.
 	 */
 	static Awaitable.WithUnit ofTermination(Server server) {
 		return (timeout, unit) -> {
@@ -29,8 +29,8 @@ public interface GrpcAwaitable {
 
 
 	/**
-	 * Creates {@link Awaitable.WithUnit} of
-	 * {@link Server#awaitTermination(long, TimeUnit) termination} of {@code server}.
+	 * Creates {@link Awaitable} of
+	 * {@link Server#awaitTermination(long, TimeUnit) server termination}.
 	 * If {@code server} fails to terminate, {@link Server#shutdownNow()} is called.
 	 */
 	static Awaitable.WithUnit ofEnforcedTermination(Server server) {
@@ -47,8 +47,8 @@ public interface GrpcAwaitable {
 
 
 	/**
-	 * Creates {@link Awaitable.WithUnit} of
-	 * {@link ManagedChannel#awaitTermination(long, TimeUnit) termination} of {@code channel}.
+	 * Creates {@link Awaitable} of
+	 * {@link ManagedChannel#awaitTermination(long, TimeUnit) channel termination}.
 	 */
 	static Awaitable.WithUnit ofTermination(ManagedChannel channel) {
 		return (timeout, unit) -> {
@@ -60,8 +60,8 @@ public interface GrpcAwaitable {
 
 
 	/**
-	 * Creates {@link Awaitable.WithUnit} of
-	 * {@link ManagedChannel#awaitTermination(long, TimeUnit) termination} of {@code channel}.
+	 * Creates {@link Awaitable} of
+	 * {@link ManagedChannel#awaitTermination(long, TimeUnit) channel termination}.
 	 * If {@code channel} fails to terminate, {@link ManagedChannel#shutdownNow()} is called.
 	 */
 	static Awaitable.WithUnit ofEnforcedTermination(ManagedChannel channel) {
