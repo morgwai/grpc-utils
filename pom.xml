@@ -6,7 +6,7 @@
 
 	<groupId>pl.morgwai.base</groupId>
 	<artifactId>grpc-utils</artifactId>
-	<version>4.0</version>
+	<version>4.1-SNAPSHOT</version>
 
 	<name>gRPC utils</name>
 	<description>Some helpful classes when developing gRPC services</description>
