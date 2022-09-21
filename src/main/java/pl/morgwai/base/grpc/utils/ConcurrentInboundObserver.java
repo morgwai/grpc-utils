@@ -229,7 +229,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *             individualNestedResponseProcessingResultsObserver.onCompleted();
 	 *         },
 	 *         (error, thisObserver) -&gt; {
-	 *             // abort tasks if needed
+	 *             thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+	 *             thisObserver.onCompleted();
 	 *         },
 	 *         (nestedCallRequestObserver) -&gt; {
 	 *             parentRequestObserverHolder[0] = newConcurrentServerRequestObserver(
@@ -241,7 +242,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *                     individualParentRequestProcessingResultsObserver.onCompleted();
 	 *                 },
 	 *                 (error, thisObserver) -&gt; {
-	 *                     // abort tasks if needed
+	 *                     // client cancelled, abort tasks if needed
 	 *                 },
 	 *                 parentResponseObserver
 	 *             );
@@ -321,7 +322,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *             }
 	 *         ),
 	 *         (error, thisObserver) -&gt; {
-	 *             // abort ongoing tasks if needed
+	 *             // client cancelled, abort ongoing tasks if needed
 	 *         }
 	 *     );
 	 * }</pre>
@@ -409,8 +410,9 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *                 individualFirstCallResponseProcessingResultsObserver.onNext(chainedRequest);
 	 *                 individualFirstCallResponseProcessingResultsObserver.onCompleted();
 	 *             },
-	 *             (throwable, thisObserver) -&gt; {
-	 *                 // abort tasks if needed
+	 *             (error, thisObserver) -&gt; {
+	 *                 thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+	 *                 thisObserver.onCompleted();
 	 *             },
 	 *             (ClientCallStreamObserver&lt;FirstCallRequest&gt; firstCallRequestObserver) -&gt;
 	 *                     copyWithFlowControl(firstCallRequestProducer, firstCallRequestObserver)
