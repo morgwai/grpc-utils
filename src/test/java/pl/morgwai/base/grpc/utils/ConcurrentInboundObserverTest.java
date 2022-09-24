@@ -465,7 +465,7 @@ public abstract class ConcurrentInboundObserverTest {
 					for (int i = 0; i < resultsPerMessage; i ++) {
 						synchronized (individualObserver) {
 							while (
-								! individualObserver.isReady()
+								!individualObserver.isReady()
 								|| handlerCallCounters[inboundMessageId - 1] < 1
 								|| (inboundMessageId == 2 && handlerCallCounters[1] <= i)
 							) try {

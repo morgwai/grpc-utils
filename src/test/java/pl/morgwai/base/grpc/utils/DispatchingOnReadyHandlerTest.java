@@ -149,7 +149,7 @@ public class DispatchingOnReadyHandlerTest {
 				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
 
 				@Override public Integer next() {
-					if ( ! concurrencyGuard.tryLock()) {
+					if ( !concurrencyGuard.tryLock()) {
 						final var error =  new AssertionError("another handler detected");
 						asyncAssertionError = error;  // in case exception handling is also broken
 						throw error;

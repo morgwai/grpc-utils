@@ -202,8 +202,13 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 				onErrorHandler,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
-		this(outboundObserver, maxConcurrentMessages, onInboundMessageHandler, onErrorHandler,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		this(
+			outboundObserver,
+			maxConcurrentMessages,
+			onInboundMessageHandler,
+			onErrorHandler,
+			(Consumer<ClientCallStreamObserver<ControlT>>) null
+		);
 		setInboundControlObserver(inboundControlObserver);
 	}
 
@@ -383,8 +388,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		final var tmp = (CallStreamObserver<OutboundT>) outboundObserver;
 		this.outboundObserver = tmp;
 		idleCount = maxConcurrentMessages;
-		this.onInboundMessageHandler = onInboundMessageHandler != null
-				? onInboundMessageHandler::accept : null;
+		this.onInboundMessageHandler =
+				onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
 		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
 		this.onBeforeStartHandler = onBeforeStartHandler;
 		outboundObserver.setOnReadyHandler(this::onReady);
@@ -476,8 +481,13 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages
 	) {
-		this(outboundObserver, maxConcurrentMessages, null, null,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		this(
+			outboundObserver,
+			maxConcurrentMessages,
+			null,
+			null,
+			(Consumer<ClientCallStreamObserver<ControlT>>) null
+		);
 	}
 
 
@@ -646,6 +656,9 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public class OutboundSubstreamObserver extends CallStreamObserver<OutboundT> {
 
+		// Listener's / parent observer's concurrency contract makes it unnecessary to synchronize
+		// setting or calling onReadyHandler, but calling and setting may still be performed by
+		// different threads (just not concurrently), hence volatile.
 		volatile Runnable onReadyHandler;
 
 		/**
@@ -775,6 +788,6 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		}
 
 		static final String OBSERVER_FINALIZED_MESSAGE =
-				"onCompleted() has been already called for this observer";
+				"onCompleted() has been already called on this substream observer";
 	}
 }

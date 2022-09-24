@@ -138,7 +138,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void onNext(OutboundT message) {
-		if ( ! concurrencyGuard.tryLock("onNext")) {
+		if ( !concurrencyGuard.tryLock("onNext")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -177,7 +177,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			Thread.sleep(delayMillis);
 		} catch (InterruptedException ignored) {}
 		synchronized (listenerLock) {
-			if ( ! ready) {
+			if ( !ready) {
 				log.fine("marking response observer ready again");
 				ready = true;
 				if (onReadyHandler != null) onReadyHandler.run();
@@ -189,7 +189,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public boolean isReady() {
-		if ( ! concurrencyGuard.tryLock("isReady")) {
+		if ( !concurrencyGuard.tryLock("isReady")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -213,7 +213,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void setOnReadyHandler(Runnable onReadyHandler) {
-		if ( ! concurrencyGuard.tryLock("setOnReadyHandler")) {
+		if ( !concurrencyGuard.tryLock("setOnReadyHandler")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -236,7 +236,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void onCompleted() {
-		if ( ! concurrencyGuard.tryLock("onCompleted")) {
+		if ( !concurrencyGuard.tryLock("onCompleted")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -289,7 +289,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
 		finalizationGuard.await(timeoutMillis, TimeUnit.MILLISECONDS);
 		synchronized (finalizationGuard) {
-			if (!finalized && reportedError == null) {
+			if ( !finalized && reportedError == null) {
 				throw new RuntimeException("timeout awaiting for finalization");
 			}
 		}
@@ -305,7 +305,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void disableAutoInboundFlowControl() {
-		if ( ! concurrencyGuard.tryLock("disableAutoRequest")) {
+		if ( !concurrencyGuard.tryLock("disableAutoRequest")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -427,7 +427,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	volatile boolean cancelled = false;
 
 	public void setOnCancelHandler(Runnable onCancelHandler) {
-		if ( ! concurrencyGuard.tryLock("setOnCancelHandler")) {
+		if ( !concurrencyGuard.tryLock("setOnCancelHandler")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
@@ -442,7 +442,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 	public void setCompression(String compression) {
-		if ( ! concurrencyGuard.tryLock("setCompression")) {
+		if ( !concurrencyGuard.tryLock("setCompression")) {
 			throw new AssertionError("concurrency violation");
 		}
 		concurrencyGuard.unlock();
@@ -450,7 +450,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	@Override
 	public void setMessageCompression(boolean enable) {
-		if ( ! concurrencyGuard.tryLock("setMessageCompression")) {
+		if ( !concurrencyGuard.tryLock("setMessageCompression")) {
 			throw new AssertionError("concurrency violation");
 		}
 		concurrencyGuard.unlock();
