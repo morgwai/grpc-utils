@@ -13,7 +13,7 @@ import io.grpc.Status.Code;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ChannelzService;
 import io.grpc.stub.*;
-import pl.morgwai.base.concurrent.Awaitable;
+import pl.morgwai.base.util.concurrent.Awaitable;
 import pl.morgwai.base.grpc.utils.*;
 import pl.morgwai.samples.grpc.utils.BackendGrpc.BackendStub;
 import pl.morgwai.samples.grpc.utils.FrontendGrpc.FrontendImplBase;
@@ -487,9 +487,10 @@ public class SqueezedServer extends FrontendImplBase {
 	public boolean shutdownAndEnforceTermination(long timeoutMillis) throws InterruptedException {
 		final var failedTerminations = Awaitable.awaitMultiple(
 			timeoutMillis,
-			Awaitable.entry("grpcServer", GrpcAwaitable.ofEnforcedTermination(grpcServer)),
-			Awaitable.entry("executor", Awaitable.ofEnforcedTermination(executor)),
-			Awaitable.entry("backendChannel", GrpcAwaitable.ofEnforcedTermination(backendChannel))
+			Awaitable.newEntry("grpcServer", GrpcAwaitable.ofEnforcedTermination(grpcServer)),
+			Awaitable.newEntry("executor", Awaitable.ofEnforcedTermination(executor)),
+			Awaitable.newEntry(
+					"backendChannel", GrpcAwaitable.ofEnforcedTermination(backendChannel))
 		);
 		for (var failedTermination: failedTerminations) {
 			System.out.println("SQUEEZED: " + failedTermination + " hasn't shutdown cleanly");

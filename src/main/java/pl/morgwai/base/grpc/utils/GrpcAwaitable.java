@@ -4,7 +4,7 @@ package pl.morgwai.base.grpc.utils;
 import java.util.concurrent.TimeUnit;
 
 import io.grpc.*;
-import pl.morgwai.base.concurrent.Awaitable;
+import pl.morgwai.base.util.concurrent.Awaitable;
 
 
 

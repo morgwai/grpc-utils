@@ -11,7 +11,7 @@ import io.grpc.*;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ChannelzService;
 import io.grpc.stub.*;
-import pl.morgwai.base.concurrent.Awaitable;
+import pl.morgwai.base.util.concurrent.Awaitable;
 import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver;
 import pl.morgwai.base.grpc.utils.GrpcAwaitable;
 import pl.morgwai.samples.grpc.utils.BackendGrpc.BackendImplBase;
@@ -262,8 +262,8 @@ public class BackendServer extends BackendImplBase {
 	public boolean shutdownAndEnforceTermination(long timeoutMillis) throws InterruptedException {
 		final var failedTerminations = Awaitable.awaitMultiple(
 			timeoutMillis,
-			Awaitable.entry("grpcServer", GrpcAwaitable.ofEnforcedTermination(grpcServer)),
-			Awaitable.entry("executor", Awaitable.ofEnforcedTermination(executor))
+			Awaitable.newEntry("grpcServer", GrpcAwaitable.ofEnforcedTermination(grpcServer)),
+			Awaitable.newEntry("executor", Awaitable.ofEnforcedTermination(executor))
 		);
 		for (var failedTermination: failedTerminations) {
 			System.out.println("BACKEND: " + failedTermination + " hasn't shutdown cleanly");
