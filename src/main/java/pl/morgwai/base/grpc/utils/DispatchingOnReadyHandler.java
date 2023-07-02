@@ -78,7 +78,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * via {@code messageProducer} {@link #DispatchingOnReadyHandler(
 	 * CallStreamObserver, Executor, int, IntFunction, IntFunction) constructor} param.
 	 */
-	protected final IntFunction<MessageT> messageProducer;
+	protected final IntFunction<? extends MessageT> messageProducer;
 
 
 
@@ -109,7 +109,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		Executor taskExecutor,
 		int numberOfTasks,
 		IntFunction<Boolean> producerHasMoreMessagesIndicator,
-		IntFunction<MessageT> messageProducer
+		IntFunction<? extends MessageT> messageProducer
 	) {
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
@@ -147,9 +147,9 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		Executor taskExecutor,
 		int numberOfTasks,
 		IntFunction<Boolean> producerHasMoreMessagesIndicator,
-		IntFunction<MessageT> messageProducer
+		IntFunction<? extends MessageT> messageProducer
 	) {
-		final var handler = new DispatchingOnReadyHandler<>(
+		final var handler = new DispatchingOnReadyHandler<MessageT>(
 			outboundObserver,
 			taskExecutor,
 			numberOfTasks,
@@ -170,7 +170,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
-		Iterator<MessageT>... messageProducers
+		Iterator<? extends MessageT>... messageProducers
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
@@ -189,7 +189,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		Supplier<Boolean> producerHasMoreMessagesIndicator,
-		Supplier<MessageT> messageProducer
+		Supplier<? extends MessageT> messageProducer
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
@@ -275,9 +275,9 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 						taskRunning[taskNumber] = outboundObserver.isReady();
 						if ( !taskRunning[taskNumber]) return;
 					}
-					final var result = produceNextMessage(taskNumber);  // outside of lock
+					final var message = produceNextMessage(taskNumber);  // outside of lock
 					synchronized (lock) {
-						outboundObserver.onNext(result);
+						outboundObserver.onNext(message);
 					}
 				}
 			} catch (NoSuchElementException e) {/* treat it same as !hasNext() */}
