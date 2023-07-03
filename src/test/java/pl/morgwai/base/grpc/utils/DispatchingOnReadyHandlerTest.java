@@ -4,6 +4,8 @@ package pl.morgwai.base.grpc.utils;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntFunction;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,6 +23,7 @@ public class DispatchingOnReadyHandlerTest {
 
 
 
+	static final String LABEL = "testSubjectHandler";
 	DispatchingOnReadyHandler<Integer> testSubjectHandler;
 
 	FakeOutboundObserver<Integer, ?> outboundObserver;
@@ -56,6 +59,8 @@ public class DispatchingOnReadyHandlerTest {
 	void performStandardVerifications() {
 		ConcurrentInboundObserverTest.performStandardVerifications(outboundObserver);
 		assertNull("no assertion should be broken in other threads", asyncAssertionError);
+		assertTrue("label should be correctly passed",
+				testSubjectHandler.toString().contains(LABEL));
 	}
 
 
@@ -71,7 +76,14 @@ public class DispatchingOnReadyHandlerTest {
 			outboundObserver,
 			userExecutor,
 			() -> resultCount < numberOfResponses,
-			() -> ++resultCount
+			new Supplier<>() {
+				@Override public Integer get() {
+					return ++resultCount;
+				}
+				@Override public String toString() {
+					return LABEL;
+				}
+			}
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -113,8 +125,15 @@ public class DispatchingOnReadyHandlerTest {
 			outboundObserver,
 			userExecutor,
 			numberOfTasks,
-			(i) -> resultCounters[i] < responsesPerTasks,
-			(i) -> ++resultCounters[i]
+			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
+			new IntFunction<>() {
+				@Override public Integer apply(int numberOfTasks) {
+					return ++resultCounters[numberOfTasks];
+				}
+				@Override public String toString() {
+					return LABEL;
+				}
+			}
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -146,7 +165,9 @@ public class DispatchingOnReadyHandlerTest {
 			userExecutor,
 			new Iterator<>() {
 
-				@Override public boolean hasNext() { return resultCount < numberOfResponses; }
+				@Override public boolean hasNext() {
+					return resultCount < numberOfResponses;
+				}
 
 				@Override public Integer next() {
 					if ( !concurrencyGuard.tryLock()) {
@@ -161,6 +182,10 @@ public class DispatchingOnReadyHandlerTest {
 						concurrencyGuard.unlock();
 					}
 					return ++resultCount;
+				}
+
+				@Override public String toString() {
+					return LABEL;
 				}
 			}
 		);
@@ -198,7 +223,8 @@ public class DispatchingOnReadyHandlerTest {
 		testSubjectHandler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
-			numberOfTasks
+			numberOfTasks,
+			LABEL
 		) {
 
 			@Override protected boolean producerHasNext(int taskNumber) {
@@ -257,7 +283,8 @@ public class DispatchingOnReadyHandlerTest {
 					}
 				}
 				return ++resultCounters[taskNumber];
-			}
+			},
+			LABEL
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -291,7 +318,8 @@ public class DispatchingOnReadyHandlerTest {
 		testSubjectHandler = new DispatchingOnReadyHandler<>(
 			outboundObserver,
 			userExecutor,
-			numberOfTasks
+			numberOfTasks,
+			LABEL
 		) {
 
 			@Override protected boolean producerHasNext(int taskNumber) {

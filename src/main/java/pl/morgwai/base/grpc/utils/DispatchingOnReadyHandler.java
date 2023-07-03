@@ -45,8 +45,34 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * {@link CallStreamObserver#setOnReadyHandler(Runnable)
 	 * outboundObserver.setOnReadyHandler(...)}.
 	 * @return newly created handler.
-	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, IntFunction, IntFunction)
-	 *     constructor for param descriptions
+	 * @see #DispatchingOnReadyHandler(CallStreamObserver, Executor, int, IntFunction, IntFunction,
+	 *     String) constructor for param descriptions
+	 */
+	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
+		CallStreamObserver<? super MessageT> outboundObserver,
+		Executor taskExecutor,
+		int numberOfTasks,
+		IntFunction<Boolean> producerHasNextIndicator,
+		IntFunction<? extends MessageT> messageProducer,
+		String label
+	) {
+		final var handler = new DispatchingOnReadyHandler<MessageT>(
+			outboundObserver,
+			taskExecutor,
+			numberOfTasks,
+			producerHasNextIndicator,
+			messageProducer,
+			label
+		);
+		outboundObserver.setOnReadyHandler(handler);
+		return handler;
+	}
+
+	/**
+	 * Calls {@link #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction,
+	 * IntFunction, String) copyWithFlowControl(outboundObserver, taskExecutor, numberOfTasks,
+	 * producerHasNextIndicator, messageProducer, messageProducer.toString())} (using
+	 * {@code messageProducer.toString} as {@code label}).
 	 */
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
 		CallStreamObserver<? super MessageT> outboundObserver,
@@ -55,22 +81,22 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		IntFunction<Boolean> producerHasNextIndicator,
 		IntFunction<? extends MessageT> messageProducer
 	) {
-		final var handler = new DispatchingOnReadyHandler<MessageT>(
+		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
 			numberOfTasks,
 			producerHasNextIndicator,
-			messageProducer
+			messageProducer,
+			messageProducer.toString()
 		);
-		outboundObserver.setOnReadyHandler(handler);
-		return handler;
 	}
 
 	/**
 	 * Calls {@link #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction,
-	 * IntFunction) copyWithFlowControl(...)} with a number of tasks based on the length of
-	 * {@code messageProducers} and message producing / indicating {@link IntFunction}s built from
-	 * {@code messageProducers}' {@link Iterator#hasNext()} and {@link Iterator#next()} methods.
+	 * IntFunction, String) copyWithFlowControl(...)} with the number of tasks based on the length
+	 * of {@code messageProducers} and message producing / indicating {@link IntFunction}s built
+	 * from {@code messageProducers}' {@link Iterator#hasNext()} and {@link Iterator#next()}
+	 * methods respectively. {@code messageProducers[0].toString()} is used as {@code label}.
 	 */
 	@SafeVarargs
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
@@ -81,9 +107,32 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
+			messageProducers[0].toString(),
+			messageProducers
+		);
+	}
+
+	/**
+	 * Calls {@link #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction,
+	 * IntFunction, String) copyWithFlowControl(...)} with the number of tasks based on the length
+	 * of {@code messageProducers} and message producing / indicating {@link IntFunction}s built
+	 * from {@code messageProducers}' {@link Iterator#hasNext()} and {@link Iterator#next()}
+	 * methods respectively.
+	 */
+	@SafeVarargs
+	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
+		CallStreamObserver<? super MessageT> outboundObserver,
+		Executor taskExecutor,
+		String label,
+		Iterator<? extends MessageT>... messageProducers
+	) {
+		return copyWithFlowControl(
+			outboundObserver,
+			taskExecutor,
 			messageProducers.length,
 			(taskNumber) -> messageProducers[taskNumber].hasNext(),
-			(taskNumber) -> messageProducers[taskNumber].next()
+			(taskNumber) -> messageProducers[taskNumber].next(),
+			label
 		);
 	}
 
@@ -100,9 +149,30 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
+			producerHasNextIndicator,
+			messageProducer,
+			messageProducer.toString()
+		);
+	}
+
+	/**
+	 * Single task version of {@link #copyWithFlowControl(CallStreamObserver, Executor, int,
+	 * IntFunction, IntFunction, String)}.
+	 */
+	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
+		CallStreamObserver<? super MessageT> outboundObserver,
+		Executor taskExecutor,
+		Supplier<Boolean> producerHasNextIndicator,
+		Supplier<? extends MessageT> messageProducer,
+		String label
+	) {
+		return copyWithFlowControl(
+			outboundObserver,
+			taskExecutor,
 			1,
 			(always0) -> producerHasNextIndicator.get(),
-			(always0) -> messageProducer.get()
+			(always0) -> messageProducer.get(),
+			label
 		);
 	}
 
@@ -134,22 +204,29 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * throwing.</p>
 	 * <p>
 	 * This constructor does <b>not</b> call {@code outboundObserver.setOnReadyHandler(this)}.</p>
+	 * @param label for logging and debugging purposes.
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction, IntFunction)
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Iterator[])
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, Supplier)
+	 * @see #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction, IntFunction,
+	 *     String)
+	 * @see #copyWithFlowControl(CallStreamObserver, Executor, String, Iterator[])
+	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, Supplier, String)
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
 		IntFunction<Boolean> producerHasNextIndicator,
-		IntFunction<? extends MessageT> messageProducer
+		IntFunction<? extends MessageT> messageProducer,
+		String label
 	) {
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
 		this.numberOfTasks = numberOfTasks;
 		this.producerHasNextIndicator = producerHasNextIndicator;
 		this.messageProducer = messageProducer;
+		this.label = label;
 		taskRunningOrCompleted = new boolean[numberOfTasks];
 	}
 
@@ -161,9 +238,10 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	protected DispatchingOnReadyHandler(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
-		int numberOfTasks
+		int numberOfTasks,
+		String label
 	) {
-		this(outboundObserver, taskExecutor, numberOfTasks, null, null);
+		this(outboundObserver, taskExecutor, numberOfTasks, null, null, label);
 	}
 
 
@@ -186,7 +264,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	/**
 	 * Called by the default implementation of {@link #producerHasNext(int)}. Initialized
 	 * via {@code producerHasNextIndicator} {@link #DispatchingOnReadyHandler(
-	 * CallStreamObserver, Executor, int, IntFunction, IntFunction) constructor} param.
+	 * CallStreamObserver, Executor, int, IntFunction, IntFunction, String) constructor} param.
 	 */
 	protected final IntFunction<Boolean> producerHasNextIndicator;
 
@@ -204,7 +282,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	/**
 	 * Called by the default implementation of {@link #produceNextMessage(int)}. Initialized
 	 * via {@code messageProducer} {@link #DispatchingOnReadyHandler(
-	 * CallStreamObserver, Executor, int, IntFunction, IntFunction) constructor} param.
+	 * CallStreamObserver, Executor, int, IntFunction, IntFunction, String) constructor} param.
 	 */
 	protected final IntFunction<? extends MessageT> messageProducer;
 
@@ -233,11 +311,19 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	final CallStreamObserver<? super MessageT> outboundObserver;
 	final Executor taskExecutor;
 	final int numberOfTasks;
+	final String label;
 
 	final boolean[/*numberOfTasks*/] taskRunningOrCompleted;// prevents unnecessary task dispatching
 	int completedTaskCount = 0;
 
 	final Object lock = new Object();
+
+
+
+	@Override
+	public String toString() {
+		return "DispatchingOnReadyHandler { label=\"" + label + "\" }";
+	}
 
 
 
@@ -317,7 +403,8 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 
 		@Override public String toString() {
-			return "onReadyHandlerTask-" + taskNumber;
+			return "DispatchingOnReadyHandler.Task { label=\"" + label + "\", taskNumber="
+					+ taskNumber + " }";
 		}
 	}
 }
