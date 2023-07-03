@@ -52,14 +52,14 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		IntFunction<Boolean> producerHasMoreMessagesIndicator,
+		IntFunction<Boolean> producerHasNextIndicator,
 		IntFunction<? extends MessageT> messageProducer
 	) {
 		final var handler = new DispatchingOnReadyHandler<MessageT>(
 			outboundObserver,
 			taskExecutor,
 			numberOfTasks,
-			producerHasMoreMessagesIndicator,
+			producerHasNextIndicator,
 			messageProducer
 		);
 		outboundObserver.setOnReadyHandler(handler);
@@ -94,14 +94,14 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
-		Supplier<Boolean> producerHasMoreMessagesIndicator,
+		Supplier<Boolean> producerHasNextIndicator,
 		Supplier<? extends MessageT> messageProducer
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
 			1,
-			(always0) -> producerHasMoreMessagesIndicator.get(),
+			(always0) -> producerHasNextIndicator.get(),
 			(always0) -> messageProducer.get()
 		);
 	}
@@ -110,7 +110,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 	/**
 	 * Constructs a new handler with {@code numberOfTasks} tasks and initializes message producing
-	 * functions {@link #messageProducer} and {@link #producerHasMoreMessagesIndicator} with
+	 * functions {@link #messageProducer} and {@link #producerHasNextIndicator} with
 	 * respective params.
 	 * Each task will be dispatched to {@code taskExecutor} and will produce messages by calling
 	 * the {@link #messageProducer messageProducer.apply(taskNumber)}.<br/>
@@ -122,8 +122,8 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * becomes ready again. Redispatching of a given task will continue until the task is completed.
 	 * </p>
 	 * <p>
-	 * A task will be marked as completed if {@link #producerHasMoreMessagesIndicator
-	 * producerHasMoreMessagesIndicator.apply(taskNumber)} returns {@code false} or if
+	 * A task will be marked as completed if {@link #producerHasNextIndicator
+	 * producerHasNextIndicator.apply(taskNumber)} returns {@code false} or if
 	 * {@link #messageProducer messageProducer.apply(taskNumber)} throws a
 	 * {@link NoSuchElementException}.</p>
 	 * <p>
@@ -142,20 +142,20 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		IntFunction<Boolean> producerHasMoreMessagesIndicator,
+		IntFunction<Boolean> producerHasNextIndicator,
 		IntFunction<? extends MessageT> messageProducer
 	) {
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
 		this.numberOfTasks = numberOfTasks;
-		this.producerHasMoreMessagesIndicator = producerHasMoreMessagesIndicator;
+		this.producerHasNextIndicator = producerHasNextIndicator;
 		this.messageProducer = messageProducer;
-		taskRunning = new boolean[numberOfTasks];
+		taskRunningOrCompleted = new boolean[numberOfTasks];
 	}
 
 	/**
 	 * Constructor for those who prefer to override methods rather than provide functional handlers
-	 * as params. Both {@link #producerHasMoreMessages(int)} and {@link #produceNextMessage(int)}
+	 * as params. Both {@link #producerHasNext(int)} and {@link #produceNextMessage(int)}
 	 * must be overridden.
 	 */
 	protected DispatchingOnReadyHandler(
@@ -171,7 +171,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	/**
 	 * Indicates whether {@link #produceNextMessage(int) produceNextMessage(taskNumber)} will
 	 * produce more messages.
-	 * The default implementation calls {@link #producerHasMoreMessagesIndicator}.
+	 * The default implementation calls {@link #producerHasNextIndicator}.
 	 * <p>
 	 * Implementations are allowed to return {@code true} if it is hard to determine upfront if
 	 * there will be more messages or not, and {@link #produceNextMessage(int)} may throw
@@ -179,16 +179,16 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * Alternatively, this method may also block until it is able to give a definitive
 	 * answer.</p>
 	 */
-	protected boolean producerHasMoreMessages(int taskNumber) {
-		return producerHasMoreMessagesIndicator.apply(taskNumber);
+	protected boolean producerHasNext(int taskNumber) {
+		return producerHasNextIndicator.apply(taskNumber);
 	}
 
 	/**
-	 * Called by the default implementation of {@link #producerHasMoreMessages(int)}. Initialized
-	 * via {@code producerHasMoreMessagesIndicator} {@link #DispatchingOnReadyHandler(
+	 * Called by the default implementation of {@link #producerHasNext(int)}. Initialized
+	 * via {@code producerHasNextIndicator} {@link #DispatchingOnReadyHandler(
 	 * CallStreamObserver, Executor, int, IntFunction, IntFunction) constructor} param.
 	 */
-	protected final IntFunction<Boolean> producerHasMoreMessagesIndicator;
+	protected final IntFunction<Boolean> producerHasNextIndicator;
 
 
 
@@ -226,15 +226,16 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		}
 	}
 
+	Throwable errorToReport;
+
 
 
 	final CallStreamObserver<? super MessageT> outboundObserver;
 	final Executor taskExecutor;
 	final int numberOfTasks;
 
-	final boolean[] taskRunning;
+	final boolean[/*numberOfTasks*/] taskRunningOrCompleted;// prevents unnecessary task dispatching
 	int completedTaskCount = 0;
-	Throwable errorToReport;
 
 	final Object lock = new Object();
 
@@ -253,11 +254,11 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		synchronized (lock) {
 			if (completedTaskCount == numberOfTasks) return;
 			for (int taskNumber = 0; taskNumber < numberOfTasks; taskNumber++) {
-				// it may happen that responseObserver will change its state from unready to ready
+				// it may happen that outboundObserver will change its state from unready to ready
 				// very fast, before some tasks can even notice. Such tasks will span over more than
 				// 1 cycle and taskRunning[] flags prevent dispatching duplicates in such case.
-				if (taskRunning[taskNumber]) continue;
-				taskRunning[taskNumber] = true;
+				if (taskRunningOrCompleted[taskNumber]) continue;
+				taskRunningOrCompleted[taskNumber] = true;
 				taskExecutor.execute(new Task(taskNumber));
 			}
 		}
@@ -269,7 +270,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * Handles a single cycle of {@link #outboundObserver}'s readiness for the
 	 * {@link #messageProducer} with the number given by the {@link #Task(int) constructor} param.
 	 * Each task will be redispatched to {@link #taskExecutor} each time {@link #outboundObserver}
-	 * becomes ready until {@link #producerHasMoreMessagesIndicator} applied to task's number
+	 * becomes ready until {@link #producerHasNextIndicator} applied to task's number
 	 * returns {@code false} or until {@link #messageProducer} applied to task's number throws a
 	 * {@link NoSuchElementException}.
 	 */
@@ -282,23 +283,34 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 
 		@Override public void run() {
 			try {
-				while (producerHasMoreMessages(taskNumber)) {
+				// only outboundObserver async methods and handler's bookkeeping state manipulation
+				// happen inside lock, while possibly slow producer methods happen outside of lock
+				while (producerHasNext(taskNumber)) {
 					synchronized (lock) {
-						taskRunning[taskNumber] = outboundObserver.isReady();
-						if ( !taskRunning[taskNumber]) return;
+						if ( !outboundObserver.isReady()) {
+							// "pause" the loop until the task is redispatched when outboundObserver
+							// becomes ready again
+							taskRunningOrCompleted[taskNumber] = false;
+							return;
+						}
 					}
 					final var message = produceNextMessage(taskNumber);  // outside of lock
 					synchronized (lock) {
 						outboundObserver.onNext(message);
 					}
 				}
-			} catch (NoSuchElementException e) {/* treat it same as !hasNext() */}
+			} catch (NoSuchElementException e) {/* equivalent to !producerHasNext(taskNumber) */}
+			// taskRunningOrCompleted[taskNumber] is always true at this point
 
-			// taskRunning[taskNumber] will be left true to not respawn completed/aborted tasks
+			// task completed, perform final bookkeeping
 			synchronized (lock) {
-				if (++completedTaskCount < numberOfTasks) return;
-				if (errorToReport == null) outboundObserver.onCompleted();
-						else outboundObserver.onError(errorToReport);
+				completedTaskCount++;
+				if (completedTaskCount < numberOfTasks) return;
+				if (errorToReport == null) {
+					outboundObserver.onCompleted();
+				} else {
+					outboundObserver.onError(errorToReport);
+				}
 			}
 		}
 

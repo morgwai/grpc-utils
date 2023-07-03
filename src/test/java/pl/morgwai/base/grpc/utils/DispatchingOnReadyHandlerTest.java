@@ -201,7 +201,7 @@ public class DispatchingOnReadyHandlerTest {
 			numberOfTasks
 		) {
 
-			@Override protected boolean producerHasMoreMessages(int taskNumber) {
+			@Override protected boolean producerHasNext(int taskNumber) {
 				return resultCounters[taskNumber] < responsesPerTasks;
 			}
 
@@ -294,7 +294,7 @@ public class DispatchingOnReadyHandlerTest {
 			numberOfTasks
 		) {
 
-			@Override protected boolean producerHasMoreMessages(int taskNumber) {
+			@Override protected boolean producerHasNext(int taskNumber) {
 				return resultCounters[taskNumber] < responsesPerTasks;
 			}
 
