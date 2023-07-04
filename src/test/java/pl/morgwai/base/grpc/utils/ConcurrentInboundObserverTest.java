@@ -536,7 +536,6 @@ public abstract class ConcurrentInboundObserverTest {
 					individualObserver,
 					userExecutor,
 					tasksPerMessage,
-					(i) -> resultCounters[i] < resultsPerTask,
 					(i) -> {
 						if (halfProcessingDelay > 0L) {
 							final var processingDelay = halfProcessingDelay +
@@ -547,7 +546,8 @@ public abstract class ConcurrentInboundObserverTest {
 						}
 						resultCounters[i]++;
 						return new OutboundMessage(inboundMessage.id);
-					}
+					},
+					(i) -> resultCounters[i] < resultsPerTask
 				);
 			},
 			newErrorHandler(Thread.currentThread())

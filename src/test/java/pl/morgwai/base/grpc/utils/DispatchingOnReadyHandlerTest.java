@@ -75,7 +75,6 @@ public class DispatchingOnReadyHandlerTest {
 		testSubjectHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			outboundObserver,
 			userExecutor,
-			() -> resultCount < numberOfResponses,
 			new Supplier<>() {
 				@Override public Integer get() {
 					return ++resultCount;
@@ -83,7 +82,8 @@ public class DispatchingOnReadyHandlerTest {
 				@Override public String toString() {
 					return LABEL;
 				}
-			}
+			},
+			() -> resultCount < numberOfResponses
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -125,7 +125,6 @@ public class DispatchingOnReadyHandlerTest {
 			outboundObserver,
 			userExecutor,
 			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
 			new IntFunction<>() {
 				@Override public Integer apply(int numberOfTasks) {
 					return ++resultCounters[numberOfTasks];
@@ -133,7 +132,8 @@ public class DispatchingOnReadyHandlerTest {
 				@Override public String toString() {
 					return LABEL;
 				}
-			}
+			},
+			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks
 		);
 
 		final var startMillis = System.currentTimeMillis();
@@ -270,7 +270,6 @@ public class DispatchingOnReadyHandlerTest {
 			outboundObserver,
 			userExecutor,
 			numberOfTasks,
-			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
 			(taskNumber) -> {
 				if (taskNumber == 0) {
 					if (resultCounters[taskNumber] == messageNumberToThrowAfter) {
@@ -284,6 +283,7 @@ public class DispatchingOnReadyHandlerTest {
 				}
 				return ++resultCounters[taskNumber];
 			},
+			(taskNumber) -> resultCounters[taskNumber] < responsesPerTasks,
 			LABEL
 		);
 

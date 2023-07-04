@@ -215,7 +215,6 @@ public class SqueezedServer extends FrontendImplBase {
 					individualObserver,
 					executor,
 					midProcessingSubTaskNumber,
-					(ignoredTaskNumber) -> midProcessor.hasMoreResults(),
 					(ignoredTaskNumber) -> {
 						try {
 							return midProcessor.midProcess();
@@ -229,7 +228,8 @@ public class SqueezedServer extends FrontendImplBase {
 							reportErrorToParent("midProcessing", t, processor);
 							throw t;
 						}
-					}
+					},
+					(ignoredTaskNumber) -> midProcessor.hasMoreResults()
 				);
 			}
 

@@ -52,16 +52,16 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		IntFunction<Boolean> producerHasNextIndicator,
 		IntFunction<? extends MessageT> messageProducer,
+		IntFunction<Boolean> producerHasNextIndicator,
 		String label
 	) {
 		final var handler = new DispatchingOnReadyHandler<MessageT>(
 			outboundObserver,
 			taskExecutor,
 			numberOfTasks,
-			producerHasNextIndicator,
 			messageProducer,
+			producerHasNextIndicator,
 			label
 		);
 		outboundObserver.setOnReadyHandler(handler);
@@ -78,15 +78,15 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		IntFunction<Boolean> producerHasNextIndicator,
-		IntFunction<? extends MessageT> messageProducer
+		IntFunction<? extends MessageT> messageProducer,
+		IntFunction<Boolean> producerHasNextIndicator
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
 			numberOfTasks,
-			producerHasNextIndicator,
 			messageProducer,
+			producerHasNextIndicator,
 			messageProducer.toString()
 		);
 	}
@@ -130,8 +130,8 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 			outboundObserver,
 			taskExecutor,
 			messageProducers.length,
-			(taskNumber) -> messageProducers[taskNumber].hasNext(),
 			(taskNumber) -> messageProducers[taskNumber].next(),
+			(taskNumber) -> messageProducers[taskNumber].hasNext(),
 			label
 		);
 	}
@@ -143,14 +143,14 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
-		Supplier<Boolean> producerHasNextIndicator,
-		Supplier<? extends MessageT> messageProducer
+		Supplier<? extends MessageT> messageProducer,
+		Supplier<Boolean> producerHasNextIndicator
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
-			producerHasNextIndicator,
 			messageProducer,
+			producerHasNextIndicator,
 			messageProducer.toString()
 		);
 	}
@@ -162,16 +162,16 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	public static <MessageT> DispatchingOnReadyHandler<MessageT> copyWithFlowControl(
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
-		Supplier<Boolean> producerHasNextIndicator,
 		Supplier<? extends MessageT> messageProducer,
+		Supplier<Boolean> producerHasNextIndicator,
 		String label
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
 			taskExecutor,
 			1,
-			(always0) -> producerHasNextIndicator.get(),
 			(always0) -> messageProducer.get(),
+			(always0) -> producerHasNextIndicator.get(),
 			label
 		);
 	}
@@ -192,9 +192,9 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * becomes ready again. Redispatching of a given task will continue until the task is completed.
 	 * </p>
 	 * <p>
-	 * A task will be marked as completed if {@link #producerHasNextIndicator
-	 * producerHasNextIndicator.apply(taskNumber)} returns {@code false} or if
-	 * {@link #messageProducer messageProducer.apply(taskNumber)} throws a
+	 * A task will be marked as completed if
+	 * {@link #producerHasNextIndicator producerHasNextIndicator.apply(taskNumber)} returns
+	 * {@code false} or if {@link #messageProducer messageProducer.apply(taskNumber)} throws a
 	 * {@link NoSuchElementException}.</p>
 	 * <p>
 	 * If a task throws any other unchecked {@link Throwable}, it will be passed uncaught and the
@@ -217,15 +217,15 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		int numberOfTasks,
-		IntFunction<Boolean> producerHasNextIndicator,
 		IntFunction<? extends MessageT> messageProducer,
+		IntFunction<Boolean> producerHasNextIndicator,
 		String label
 	) {
 		this.outboundObserver = outboundObserver;
 		this.taskExecutor = taskExecutor;
 		this.numberOfTasks = numberOfTasks;
-		this.producerHasNextIndicator = producerHasNextIndicator;
 		this.messageProducer = messageProducer;
+		this.producerHasNextIndicator = producerHasNextIndicator;
 		this.label = label;
 		taskRunningOrCompleted = new boolean[numberOfTasks];
 	}
@@ -243,6 +243,24 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	) {
 		this(outboundObserver, taskExecutor, numberOfTasks, null, null, label);
 	}
+
+
+
+	/**
+	 * Produces a next message in the task with number {@code taskNumber}.
+	 * The default implementation calls {@link #messageProducer}.
+	 * @throws NoSuchElementException if the given task is already completed.
+	 */
+	protected MessageT produceNextMessage(int taskNumber) {
+		return messageProducer.apply(taskNumber);
+	}
+
+	/**
+	 * Called by the default implementation of {@link #produceNextMessage(int)}. Initialized
+	 * via {@code messageProducer} {@link #DispatchingOnReadyHandler(
+	 * CallStreamObserver, Executor, int, IntFunction, IntFunction, String) constructor} param.
+	 */
+	protected final IntFunction<? extends MessageT> messageProducer;
 
 
 
@@ -267,24 +285,6 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * CallStreamObserver, Executor, int, IntFunction, IntFunction, String) constructor} param.
 	 */
 	protected final IntFunction<Boolean> producerHasNextIndicator;
-
-
-
-	/**
-	 * Produces a next message in the task with number {@code taskNumber}.
-	 * The default implementation calls {@link #messageProducer}.
-	 * @throws NoSuchElementException if the given task is already completed.
-	 */
-	protected MessageT produceNextMessage(int taskNumber) {
-		return messageProducer.apply(taskNumber);
-	}
-
-	/**
-	 * Called by the default implementation of {@link #produceNextMessage(int)}. Initialized
-	 * via {@code messageProducer} {@link #DispatchingOnReadyHandler(
-	 * CallStreamObserver, Executor, int, IntFunction, IntFunction, String) constructor} param.
-	 */
-	protected final IntFunction<? extends MessageT> messageProducer;
 
 
 
