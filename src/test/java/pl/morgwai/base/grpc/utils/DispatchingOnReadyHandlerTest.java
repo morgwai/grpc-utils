@@ -277,7 +277,7 @@ public class DispatchingOnReadyHandlerTest {
 					}
 					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
 						asyncAssertionError =
-							new AssertionError("processing should stop after exception");
+								new AssertionError("processing should stop after exception");
 						throw asyncAssertionError;
 					}
 				}
@@ -334,7 +334,7 @@ public class DispatchingOnReadyHandlerTest {
 					}
 					if (resultCounters[taskNumber] >= messageNumberToThrowAfter) {
 						asyncAssertionError =
-							new AssertionError("processing should stop after exception");
+								new AssertionError("processing should stop after exception");
 						throw asyncAssertionError;
 					}
 				}
