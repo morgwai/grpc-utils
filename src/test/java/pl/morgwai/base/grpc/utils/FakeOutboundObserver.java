@@ -6,7 +6,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -14,7 +13,8 @@ import javax.annotation.Nullable;
 
 import io.grpc.Status;
 import io.grpc.stub.*;
-import pl.morgwai.base.util.concurrent.Awaitable;
+
+import static org.junit.Assert.*;
 
 
 
@@ -24,21 +24,6 @@ import pl.morgwai.base.util.concurrent.Awaitable;
  * <p>
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
- * <p>
- * Usage:</p>
- * <ol>
- *   <li>Configure observer's readiness by adjusting {@link #outputBufferSize} and
- *     {@link #unreadyDurationMillis} variables.</li>
- *   <li>Depending on client type (unary/streaming) of your gRPC method pass it to one of
- *     {@link #callWithinListenerLock(Consumer)},
- *     {@link #callWithinListenerLock(Function, Consumer)} methods.</li>
- *   <li>{@link #awaitFinalization(long)} can be used to wait until {@link #onCompleted()} or
- *     {@link #onError(Throwable)} is called.</li>
- *   <li>Client canceling can be simulated using {@link #simulateCancel()} method.</li>
- *   <li>Results can be verified with {@link #getOutputData()}, {@link #isFinalized()},
- *     {@link #getReportedError()} methods and by shutting down and inspecting
- *     {@link LoggingExecutor} supplied to the constructor.</li>
- * </ol>
  */
 public class FakeOutboundObserver<OutboundT, ControlT>
 		extends CallStreamObserver<OutboundT> {
@@ -57,47 +42,14 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	final LoggingExecutor grpcInternalExecutor;
 
-	/** Ensures listener concurrency contract */
+	/**
+	 * Ensures listener concurrency contract: user inbound observer may be called concurrently by at
+	 * most 1 thread
+	 */
 	final Object listenerLock = new Object();
 
-	/** Verifies that at most 1 thread calls this observer's methods concurrently. */
+	/** Verifies that at most 1 thread concurrently calls this observer's methods. */
 	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
-
-
-
-	/**
-	 * Calls {@code unaryClientMethod} within listener's lock.
-	 */
-	public void callWithinListenerLock(Consumer<StreamObserver<OutboundT>> unaryClientMethod) {
-		synchronized (listenerLock) {
-			unaryClientMethod.accept(this);
-			if (onReadyHandler != null) onReadyHandler.run();
-		}
-	}
-
-
-
-	/**
-	 * Calls {@code streamingClientMethod} within listener's lock and delivers request messages
-	 * to returned request observer from {@code requestProducer}.
-	 * @param requestProducer dispatched to {@link #grpcInternalExecutor} whenever
-	 *        {@link #request(int)} method is called. It should usually call its argument's
-	 *        {@link StreamObserver#onNext(Object)} possibly followed by
-	 *        {@link StreamObserver#onCompleted()} or {@link StreamObserver#onError(Throwable)} to
-	 *        simulate client's behavior. It may sleep arbitrarily long to simulate before the above
-	 *        calls to simulate client's or network delay.
-	 */
-	public <RequestT> void callWithinListenerLock(
-		Function<StreamObserver<OutboundT>, StreamObserver<RequestT>> streamingClientMethod,
-		Consumer<StreamObserver<RequestT>> requestProducer
-	) {
-		StreamObserver<RequestT> requestObserver;
-		synchronized (listenerLock) {
-			requestObserver = streamingClientMethod.apply(this);
-		}
-		startMessageDelivery(requestObserver, requestProducer);
-		if (autoRequest) requestOne();
-	}
 
 
 
@@ -115,7 +67,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	// output and readiness stuff
 
 	final List<OutboundT> outputData = new LinkedList<>();
-	final AtomicInteger messagesAfterFinalizationCount = new AtomicInteger(0);
+	int messagesAfterFinalizationCount = 0;
 	Runnable onReadyHandler;
 	volatile boolean ready = true;
 
@@ -125,13 +77,16 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 */
 	public volatile int outputBufferSize = 0;
 
-	/** Duration for which observer will be unready. By default 1ms. */
+	/**
+	 * Duration for which observer will be unready. {@code 0} means "<i>schedule to mark as ready
+	 * after the next call to {@link #isReady()}</i>". By default 1ms.
+	 */
 	public volatile long unreadyDurationMillis = 1L;
 
 	/** List of arguments of calls to {@link #onNext(Object)}. */
 	public List<OutboundT> getOutputData() {
-		if (inboundMessageDeliveryStarted && !isFinalized()) {
-			throw new IllegalStateException("running");
+		if ( !isFinalized()) {
+			throw new IllegalStateException("observer not yet finalized");
 		}
 		return outputData;
 	}
@@ -141,7 +96,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 * {@link #isFinalized() finalization}.
 	 */
 	public int getMessagesAfterFinalizationCount() {
-		return messagesAfterFinalizationCount.get();
+		return messagesAfterFinalizationCount;
 	}
 
 	@Override
@@ -151,7 +106,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 		try {
 			if (finalized) {
-				messagesAfterFinalizationCount.incrementAndGet();
+				messagesAfterFinalizationCount++;
 				throw new IllegalStateException("already finalized");
 			}
 
@@ -230,7 +185,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	// finalization stuff
 
 	final CountDownLatch finalizationGuard = new CountDownLatch(1);
-	final AtomicInteger extraFinalizationCount = new AtomicInteger(0);
+	int extraFinalizationCount = 0;
 	boolean finalized;
 	Throwable reportedError;
 	String cancelMessage;
@@ -247,16 +202,22 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 */
 	public String getCancelMessage() { return cancelMessage; }
 
+	/**
+	 *  How many bogus additional calls to either {@link #onCompleted()} or
+	 *  {@link #onError(Throwable)} there were apart from the first expected one.
+	 */
+	public int getExtraFinalizationCount() { return extraFinalizationCount; }
+
 	@Override
 	public void onCompleted() {
 		if ( !concurrencyGuard.tryLock("onCompleted")) {
 			throw new AssertionError("concurrency violation");
 		}
 		try {
-			log.fine("response completed");
+			log.fine("onCompleted()");
 			synchronized (finalizationGuard) {
 				if (finalized) {
-					extraFinalizationCount.incrementAndGet();
+					extraFinalizationCount++;
 					throw new IllegalStateException("multiple finalizations");
 				}
 				finalized = true;
@@ -282,12 +243,11 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
 	 * {@link #onError(Throwable)} or {@link #simulateCancel()} ) occurs or {@code timeoutMillis}
 	 * passes.
-	 * @throws RuntimeException if {@code timeoutMillis} is exceeded.
+	 * @return {@code true} if this observer is finalized properly, {@code false} if
+	 * {@code timeoutMillis} exceeds.
 	 */
-	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-		if ( !awaitFinalization(timeoutMillis, TimeUnit.MILLISECONDS)) {
-			throw new RuntimeException("timeout awaiting for finalization");
-		}
+	public boolean awaitFinalization(long timeoutMillis) throws InterruptedException {
+		return awaitFinalization(timeoutMillis, TimeUnit.MILLISECONDS);
 	}
 
 	public boolean awaitFinalization(long timeout, TimeUnit unit) throws InterruptedException {
@@ -296,10 +256,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			if ( !finalized && reportedError == null) return false;
 		}
 		return true;
-	}
-
-	public Awaitable.WithUnit toAwaitable() {
-		return this::awaitFinalization;
 	}
 
 
@@ -356,7 +312,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			@Override public void run() {
 				synchronized (listenerLock) {
 
-					// beforeStart(...)
+					// beforeStart(...) TODO: this is a really ugly hack...
 					final var concurrentInboundObserver =
 							(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>)
 									inboundObserver;
@@ -459,7 +415,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	// interface leftovers
 
-	public void setCompression(String compression) {
+	public void setCompression() {
 		if ( !concurrencyGuard.tryLock("setCompression")) {
 			throw new AssertionError("concurrency violation");
 		}
@@ -489,7 +445,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 				FakeOutboundObserver.this.disableAutoInboundFlowControl();
 			}
 			@Override public void setCompression(String compression) {
-				FakeOutboundObserver.this.setCompression(compression);
+				FakeOutboundObserver.this.setCompression();
 			}
 
 			// CallStreamObserver
@@ -592,9 +548,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
-	/**
-	 * Logs task scheduling and executions, scheduling rejections and uncaught exceptions.
-	 */
+	/** Logs task scheduling and executions, scheduling rejections and uncaught exceptions. */
 	public static class LoggingExecutor extends ThreadPoolExecutor {
 
 		/**
@@ -675,6 +629,29 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 		public boolean awaitTermination(long timeoutMillis) throws InterruptedException {
 			return super.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
+		}
+
+
+
+		public void verify(Throwable... expectedUncaught) {
+			assertTrue("no task scheduling failures should occur on " + getName(),
+					getRejectedTasks().isEmpty());
+			assertEquals("only expected exceptions should be thrown by tasks",
+					expectedUncaught.length, getUncaughtTaskExceptions().size());
+			for (var exception: expectedUncaught) {
+				assertTrue("all expected exceptions should be thrown by tasks",
+						getUncaughtTaskExceptions().containsKey(exception));
+			}
+			if (isTerminated()) return;
+			final int activeCount = getActiveCount();
+			final var unstartedTasks = shutdownNow();
+			if (unstartedTasks.size() == 0 && activeCount == 0) {
+				log.warning(getName() + " not terminated, but no remaining tasks :?");
+				return;
+			}
+			log.severe(getName() + " has " + activeCount + " active tasks remaining");
+			for (var task: unstartedTasks) log.severe(getName() + " unstarted " + task);
+			fail(getName() + " should shutdown cleanly");
 		}
 	}
 

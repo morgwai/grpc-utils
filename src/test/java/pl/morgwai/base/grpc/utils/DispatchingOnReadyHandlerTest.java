@@ -16,13 +16,15 @@ import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.util.concurrent.Awaitable;
 
 import static org.junit.Assert.*;
-import static pl.morgwai.base.grpc.utils.ConcurrentInboundObserverTest.*;
 
 
 
 public class DispatchingOnReadyHandlerTest {
 
 
+
+	/** Timeout for single-threaded, no-processing-delay operations. */
+	public static final long TIMEOUT_MILLIS = 500L;
 
 	static final String LABEL = "testHandler";
 	DispatchingOnReadyHandler<Integer> testHandler;
@@ -90,21 +92,21 @@ public class DispatchingOnReadyHandlerTest {
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, fakeOutboundObserver.getOutputData().size());
 		assertTrue("user tasks shouldn't throw exceptions",
 				userExecutor.getUncaughtTaskExceptions().isEmpty());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		performStandardVerifications();
 	}
 
@@ -145,21 +147,21 @@ public class DispatchingOnReadyHandlerTest {
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * numberOfTasks, fakeOutboundObserver.getOutputData().size());
 		assertTrue("user tasks shouldn't throw exceptions",
 				userExecutor.getUncaughtTaskExceptions().isEmpty());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		performStandardVerifications();
 	}
 
@@ -207,21 +209,21 @@ public class DispatchingOnReadyHandlerTest {
 		});
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, fakeOutboundObserver.getOutputData().size());
 		assertTrue("user tasks shouldn't throw exceptions",
 				userExecutor.getUncaughtTaskExceptions().isEmpty());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		performStandardVerifications();
 	}
 
@@ -262,19 +264,19 @@ public class DispatchingOnReadyHandlerTest {
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * numberOfTasks, fakeOutboundObserver.getOutputData().size());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		assertSame("exceptionToReport should be passed to onError",
 				exceptionToReport, fakeOutboundObserver.reportedError);
 		performStandardVerifications();
@@ -314,20 +316,20 @@ public class DispatchingOnReadyHandlerTest {
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
 				fakeOutboundObserver.getOutputData().size());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		assertNull("no error should be reported", fakeOutboundObserver.reportedError);
 		performStandardVerifications();
 	}
@@ -375,20 +377,20 @@ public class DispatchingOnReadyHandlerTest {
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			fakeOutboundObserver.toAwaitable(),
+			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
 			},
-			Awaitable.ofTermination(grpcInternalExecutor),
-			Awaitable.ofTermination(userExecutor)
+			grpcInternalExecutor::awaitTermination,
+			userExecutor::awaitTermination
 		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
 				fakeOutboundObserver.getOutputData().size());
-		verifyExecutor(userExecutor);
+		userExecutor.verify();
 		assertSame("exceptionToReport should be passed to onError",
 				exceptionToReport, fakeOutboundObserver.reportedError);
 		performStandardVerifications();

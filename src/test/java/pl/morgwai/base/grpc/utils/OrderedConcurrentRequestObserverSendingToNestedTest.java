@@ -12,20 +12,19 @@ public class OrderedConcurrentRequestObserverSendingToNestedTest
 
 
 
-	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
-			newConcurrentInboundObserver(
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentServerRequestObserver(
-			outboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientCallRequestObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,
-			outboundObserver.asServerCallResponseObserver()
+			fakeOutboundObserver.asServerCallResponseObserver()
 		);
 	}
 }

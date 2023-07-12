@@ -14,8 +14,8 @@ public abstract class OrderedConcurrentInboundObserverTest extends ConcurrentInb
 	@Override
 	public void testAsyncProcessingOf100MessagesIn5Threads() throws InterruptedException {
 		super.testAsyncProcessingOf100MessagesIn5Threads();
-		assertTrue("messages should be written in order",
-				Comparators.isInOrder(outboundObserver.getOutputData(), outboundMessageComparator));
+		assertTrue("messages should be written in order", Comparators.isInOrder(
+				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
 	}
 
 
@@ -23,7 +23,7 @@ public abstract class OrderedConcurrentInboundObserverTest extends ConcurrentInb
 	@Override
 	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
 		super.testDispatchingOnReadyHandlerIntegrationMultiThread();
-		assertTrue("messages should be written in order",
-				Comparators.isInOrder(outboundObserver.getOutputData(), outboundMessageComparator));
+		assertTrue("messages should be written in order", Comparators.isInOrder(
+				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
 	}
 }

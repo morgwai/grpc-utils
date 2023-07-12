@@ -12,16 +12,15 @@ public class OrderedConcurrentResponseObserverSendingToParentTest
 
 
 
-	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
-			newConcurrentInboundObserver(
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
-			outboundObserver.asServerCallResponseObserver(),
+			fakeOutboundObserver.asServerCallResponseObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

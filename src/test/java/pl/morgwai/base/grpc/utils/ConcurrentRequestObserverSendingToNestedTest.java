@@ -7,25 +7,23 @@ import io.grpc.stub.CallStreamObserver;
 
 
 
-public class ConcurrentRequestObserverSendingToNestedTest
-		extends ConcurrentInboundObserverTest {
+public class ConcurrentRequestObserverSendingToNestedTest extends ConcurrentInboundObserverTest {
 
 
 
-	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
-			newConcurrentInboundObserver(
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newConcurrentServerRequestObserver(
-			outboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientCallRequestObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,
-			outboundObserver.asServerCallResponseObserver()
+			fakeOutboundObserver.asServerCallResponseObserver()
 		);
 	}
 }
