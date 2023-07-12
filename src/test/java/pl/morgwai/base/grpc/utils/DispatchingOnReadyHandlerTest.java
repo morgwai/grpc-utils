@@ -13,6 +13,7 @@ import io.grpc.*;
 import org.junit.*;
 
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
+import pl.morgwai.base.util.concurrent.Awaitable;
 
 import static org.junit.Assert.*;
 import static pl.morgwai.base.grpc.utils.ConcurrentInboundObserverTest.*;
@@ -86,13 +87,18 @@ public class DispatchingOnReadyHandlerTest {
 			() -> producedMessageCount < numberOfMessages
 		);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, fakeOutboundObserver.getOutputData().size());
@@ -136,13 +142,18 @@ public class DispatchingOnReadyHandlerTest {
 			(taskNumber) -> producedMessageCounters[taskNumber] < messagesPerTasks
 		);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * numberOfTasks, fakeOutboundObserver.getOutputData().size());
@@ -190,16 +201,21 @@ public class DispatchingOnReadyHandlerTest {
 			}
 		);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(() -> {
 			testHandler.run();
 			testHandler.run();
 		});
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				numberOfMessages, fakeOutboundObserver.getOutputData().size());
@@ -243,13 +259,18 @@ public class DispatchingOnReadyHandlerTest {
 		};
 		fakeOutboundObserver.setOnReadyHandler(testHandler);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * numberOfTasks, fakeOutboundObserver.getOutputData().size());
@@ -290,13 +311,18 @@ public class DispatchingOnReadyHandlerTest {
 			LABEL
 		);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
@@ -346,13 +372,18 @@ public class DispatchingOnReadyHandlerTest {
 		};
 		fakeOutboundObserver.setOnReadyHandler(testHandler);
 
-		final var startMillis = System.currentTimeMillis();
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
-		fakeOutboundObserver.awaitFinalization(getRemainingMillis(startMillis));
-		grpcInternalExecutor.shutdown();
-		userExecutor.shutdown();
-		grpcInternalExecutor.awaitTermination(getRemainingMillis(startMillis));
-		userExecutor.awaitTermination(getRemainingMillis(startMillis));
+		Awaitable.awaitMultiple(
+			TIMEOUT_MILLIS,
+			fakeOutboundObserver.toAwaitable(),
+			(timeoutMillis) -> {
+				grpcInternalExecutor.shutdown();
+				userExecutor.shutdown();
+				return true;
+			},
+			Awaitable.ofTermination(grpcInternalExecutor),
+			Awaitable.ofTermination(userExecutor)
+		);
 
 		assertEquals("correct number of messages should be written",
 				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
