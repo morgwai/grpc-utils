@@ -57,30 +57,11 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	final LoggingExecutor grpcInternalExecutor;
 
-
-
-	/**
-	 * List of arguments of calls to {@link #onNext(Object)}.
-	 */
-	public List<OutboundT> getOutputData() { return outputData; }
-	final List<OutboundT> outputData = new LinkedList<>();
-
-	final AtomicInteger messagesAfterFinalizationCount = new AtomicInteger(0);
-
-	/**
-	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
-	 * submitted to it. Default is <code>0</code> which means always ready.
-	 */
-	public volatile int outputBufferSize = 0;
-
-	/**
-	 * Duration for which observer will be unready. By default 1ms.
-	 */
-	public volatile long unreadyDurationMillis = 1L;
-
-
-
+	/** Ensures listener concurrency contract */
 	final Object listenerLock = new Object();
+
+	/** Verifies that at most 1 thread calls this observer's methods concurrently. */
+	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
 
 
 
@@ -107,8 +88,9 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 *        calls to simulate client's or network delay.
 	 */
 	public <RequestT> void callWithinListenerLock(
-			Function<StreamObserver<OutboundT>, StreamObserver<RequestT>> streamingClientMethod,
-			Consumer<StreamObserver<RequestT>> requestProducer) {
+		Function<StreamObserver<OutboundT>, StreamObserver<RequestT>> streamingClientMethod,
+		Consumer<StreamObserver<RequestT>> requestProducer
+	) {
 		StreamObserver<RequestT> requestObserver;
 		synchronized (listenerLock) {
 			requestObserver = streamingClientMethod.apply(this);
@@ -130,12 +112,37 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
+	// output and readiness stuff
+
+	final List<OutboundT> outputData = new LinkedList<>();
+	final AtomicInteger messagesAfterFinalizationCount = new AtomicInteger(0);
+	Runnable onReadyHandler;
+	volatile boolean ready = true;
+
 	/**
-	 * Verifies that at most 1 thread calls this observer's methods concurrently.
+	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
+	 * submitted to it. Default is <code>0</code> which means always ready.
 	 */
-	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
+	public volatile int outputBufferSize = 0;
 
+	/** Duration for which observer will be unready. By default 1ms. */
+	public volatile long unreadyDurationMillis = 1L;
 
+	/** List of arguments of calls to {@link #onNext(Object)}. */
+	public List<OutboundT> getOutputData() {
+		if (inboundMessageDeliveryStarted && !isFinalized()) {
+			throw new IllegalStateException("running");
+		}
+		return outputData;
+	}
+
+	/**
+	 * Number of messages that were submitted to this observer after
+	 * {@link #isFinalized() finalization}.
+	 */
+	public int getMessagesAfterFinalizationCount() {
+		return messagesAfterFinalizationCount.get();
+	}
 
 	@Override
 	public void onNext(OutboundT message) {
@@ -186,8 +193,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-
-
 	@Override
 	public boolean isReady() {
 		if ( !concurrencyGuard.tryLock("isReady")) {
@@ -208,10 +213,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-	volatile boolean ready = true;
-
-
-
 	@Override
 	public void setOnReadyHandler(Runnable onReadyHandler) {
 		if ( !concurrencyGuard.tryLock("setOnReadyHandler")) {
@@ -224,16 +225,27 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-	Runnable onReadyHandler;
 
 
+	// finalization stuff
 
-	public boolean isFinalized() { return finalized; }
-	boolean finalized = false;
 	final CountDownLatch finalizationGuard = new CountDownLatch(1);
 	final AtomicInteger extraFinalizationCount = new AtomicInteger(0);
+	boolean finalized;
+	Throwable reportedError;
+	String cancelMessage;
 
+	/** Whether {@link #onCompleted()} or {@link #onError(Throwable)} was called. */
+	public boolean isFinalized() { return finalized; }
 
+	/** Error reported via {@link #onError(Throwable)}. */
+	public Throwable getReportedError() { return reportedError; }
+
+	/**
+	 * Message given by a client when
+	 * {@link ClientCallStreamObserver#cancel(String, Throwable) cancelling a call}.
+	 */
+	public String getCancelMessage() { return cancelMessage; }
 
 	@Override
 	public void onCompleted() {
@@ -255,31 +267,16 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-
-
 	@Override
 	public void onError(Throwable t) {
 		reportedError = t;
 		onCompleted();
 	}
 
-	/**
-	 * Stored argument of {@link #onError(Throwable)}.
-	 */
-	public Throwable getReportedError() { return reportedError; }
-	Throwable reportedError;
-
-
-
-	public void cancel(String message, Throwable reason) {
+	private void cancel(String message, Throwable reason) {
 		cancelMessage = message;
 		onError(reason);
 	}
-
-	public String getCancelMessage() { return cancelMessage; }
-	String cancelMessage;
-
-
 
 	/**
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
@@ -307,6 +304,85 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
+
+	// inbound message delivery stuff
+
+	volatile Consumer<StreamObserver<?>> inboundMessageProducer;
+	StreamObserver<?> inboundObserver;
+	int accumulatedMessageRequestCount = 0;
+	boolean autoRequest = true;
+	boolean inboundMessageDeliveryStarted;
+
+	/**
+	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
+	 * {@code inboundObserver} (test subject), delivers the initial call to {@link #onReadyHandler}
+	 * and to {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)} if
+	 * {@code inboundObserver} is a {@link ClientResponseObserver}.<br/>
+	 * Next, delivers messages for all accumulated {@link #request(int)} calls that happened
+	 * before this method was called.
+	 */
+	<InboundT> void startMessageDelivery(
+		StreamObserver<InboundT> inboundObserver,
+		Consumer<StreamObserver<InboundT>> inboundMessageProducer
+	) {
+		inboundMessageDeliveryStarted = true;
+		@SuppressWarnings("unchecked")
+		final var tmp = (Consumer<StreamObserver<?>>)(Consumer<?>) inboundMessageProducer;
+		this.inboundMessageProducer = tmp;
+		this.inboundObserver = new StreamObserver<InboundT>() {
+
+			@Override public void onNext(InboundT message) {
+				synchronized(listenerLock) {
+					inboundObserver.onNext(message);
+				}
+			}
+
+			@Override public void onError(Throwable error) {
+				synchronized(listenerLock) {
+					inboundObserver.onError(error);
+				}
+			}
+
+			@Override public void onCompleted() {
+				synchronized(listenerLock) {
+					inboundObserver.onCompleted();
+				}
+			}
+		};
+
+		// dispatch beforeStart(...) + initial onReady() + delivery-dispatch
+		grpcInternalExecutor.execute(new Runnable() {
+
+			@Override public void run() {
+				synchronized (listenerLock) {
+
+					// beforeStart(...)
+					final var concurrentInboundObserver =
+							(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>)
+									inboundObserver;
+					if (concurrentInboundObserver.onBeforeStartHandler != null) {
+						log.fine("calling beforeStart(...)");
+						concurrentInboundObserver.beforeStart(
+								FakeOutboundObserver.this.asClientCallControlObserver());
+					}
+
+					// initial onReady()
+					if (onReadyHandler != null) {
+						log.fine("initial onReady() call");
+						onReadyHandler.run();
+					}
+				}
+
+				// delivery-dispatch
+				request(accumulatedMessageRequestCount);
+			}
+
+			@Override public String toString() {
+				return "beforeStart(...) + initial onReady() + delivery-dispatch";
+			}
+		});
+	}
+
 	@Override
 	public void disableAutoInboundFlowControl() {
 		if ( !concurrencyGuard.tryLock("disableAutoRequest")) {
@@ -319,75 +395,10 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-	boolean autoRequest = true;
-
-
-
-	/**
-	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
-	 * {@code inboundObserver} (test subject), delivers the initial call to {@link #onReadyHandler}
-	 * and to {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)} if
-	 * {@code inboundObserver} is a {@link ClientResponseObserver}.<br/>
-	 * Next, delivers messages for all accumulated {@link #request(int)} calls that happened
-	 * before this method was called.
-	 */
-	@SuppressWarnings("unchecked")
-	<InboundT> void startMessageDelivery(
-		StreamObserver<InboundT> inboundObserver,
-		Consumer<StreamObserver<InboundT>> inboundMessageProducer
-	) {
-		// call beforeStart(...) if needed
-		final var concurrentInboundObserver =
-				(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>) inboundObserver;
-		if (concurrentInboundObserver.onBeforeStartHandler != null) {
-			concurrentInboundObserver.beforeStart(this.asClientCallControlObserver());
-		}
-
-		// initial onReady() callback
-		if (onReadyHandler != null) {
-			synchronized (listenerLock) {
-				log.fine("delivering initial onReady() callback");
-				if (onReadyHandler != null) onReadyHandler.run();
-			}
-		}
-
-		this.requestProducer = (Consumer<StreamObserver<?>>)(Consumer<?>) inboundMessageProducer;
-		this.requestObserver = new StreamObserver<InboundT>() {
-
-			@Override
-			public void onNext(InboundT message) {
-				synchronized(listenerLock) {
-					inboundObserver.onNext(message);
-				}
-			}
-
-			@Override
-			public void onError(Throwable error) {
-				synchronized(listenerLock) {
-					inboundObserver.onError(error);
-				}
-			}
-
-			@Override
-			public void onCompleted() {
-				synchronized(listenerLock) {
-					inboundObserver.onCompleted();
-				}
-			}
-		};
-		request(accumulatedMessageRequestCount);
-	}
-
-	volatile Consumer<StreamObserver<?>> requestProducer;
-	StreamObserver<?> requestObserver;
-	int accumulatedMessageRequestCount = 0;
-
-
-
 	@Override
 	public void request(int count) {
 		if (autoRequest) throw new AssertionError("autoRequest was not disabled");
-		if (requestProducer == null) {
+		if (inboundMessageProducer == null) {
 			accumulatedMessageRequestCount += count;
 			return;
 		}
@@ -398,7 +409,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		grpcInternalExecutor.execute(new Runnable() {
 
 			@Override public void run() {
-				requestProducer.accept(requestObserver);
+				inboundMessageProducer.accept(inboundObserver);
 				if (autoRequest) {
 					synchronized (finalizationGuard) {
 						if ( !finalized) requestOne();
@@ -407,12 +418,17 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			}
 
 			@Override public String toString() {
-				return "requestProducer " + requestProducer.toString();
+				return "requestProducer " + inboundMessageProducer.toString();
 			}
 		});
 	}
 
 
+
+	// cancelling stuff
+
+	volatile boolean cancelled = false;
+	Runnable onCancelHandler;
 
 	/**
 	 * Simulates canceling the call by the client side.
@@ -428,8 +444,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		return cancelled;
 	}
 
-	volatile boolean cancelled = false;
-
 	public void setOnCancelHandler(Runnable onCancelHandler) {
 		if ( !concurrencyGuard.tryLock("setOnCancelHandler")) {
 			throw new AssertionError("concurrency violation");
@@ -441,9 +455,9 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		}
 	}
 
-	Runnable onCancelHandler;
 
 
+	// interface leftovers
 
 	public void setCompression(String compression) {
 		if ( !concurrencyGuard.tryLock("setCompression")) {
@@ -462,6 +476,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
+	/** For {@link ConcurrentRequestObserverNoNestingTest}. */
 	ServerCallStreamObserver<OutboundT> asServerCallResponseObserver() {
 		return new ServerCallStreamObserver<>() {
 			// ServerCallStreamObserver
@@ -495,6 +510,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		};
 	}
 
+	/** For {@link ConcurrentRequestObserverSendingToNestedTest}. */
 	ClientCallStreamObserver<OutboundT> asClientCallRequestObserver() {
 		return new ClientCallStreamObserver<>() {
 			// ClientCallStreamObserver
@@ -527,6 +543,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		};
 	}
 
+	/** For {@link #startMessageDelivery(StreamObserver, Consumer)}. */
 	ClientCallStreamObserver<ControlT> asClientCallControlObserver() {
 		return new ClientCallStreamObserver<>() {
 			// ClientCallStreamObserver
@@ -663,7 +680,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
-	@SuppressWarnings("serial")
 	static class LoggingReentrantLock extends ReentrantLock {
 
 		final List<String> labels = new LinkedList<>();
