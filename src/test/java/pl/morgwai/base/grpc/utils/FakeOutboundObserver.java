@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 
 import io.grpc.Status;
 import io.grpc.stub.*;
+import pl.morgwai.base.util.concurrent.Awaitable;
 
 
 
@@ -287,18 +288,21 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 * @throws RuntimeException if {@code timeoutMillis} is exceeded.
 	 */
 	public void awaitFinalization(long timeoutMillis) throws InterruptedException {
-		finalizationGuard.await(timeoutMillis, TimeUnit.MILLISECONDS);
-		synchronized (finalizationGuard) {
-			if ( !finalized && reportedError == null) {
-				throw new RuntimeException("timeout awaiting for finalization");
-			}
+		if ( !awaitFinalization(timeoutMillis, TimeUnit.MILLISECONDS)) {
+			throw new RuntimeException("timeout awaiting for finalization");
 		}
 	}
 
+	public boolean awaitFinalization(long timeout, TimeUnit unit) throws InterruptedException {
+		finalizationGuard.await(timeout, unit);
+		synchronized (finalizationGuard) {
+			if ( !finalized && reportedError == null) return false;
+		}
+		return true;
+	}
 
-
-	public static long getRemainingMillis(long startMillis, long timeoutMillis) {
-		return Math.max(1L, timeoutMillis + startMillis - System.currentTimeMillis());
+	public Awaitable.WithUnit toAwaitable() {
+		return this::awaitFinalization;
 	}
 
 
