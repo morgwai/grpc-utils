@@ -121,11 +121,13 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT>
 	ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>
 	newSimpleConcurrentServerRequestObserver(
-		ServerCallStreamObserver<? super OutboundT> outboundObserver,
+		ServerCallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>>
-				onErrorHandler
+		BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					? super ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>
+				> onErrorHandler
 	) {
 		return newConcurrentServerRequestObserver(
 			outboundObserver,
@@ -212,12 +214,14 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT, ControlT>
 	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newConcurrentServerRequestObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+		BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					? super ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+				> onErrorHandler,
+		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
 		return new ConcurrentInboundObserver<>(
 			outboundObserver,
@@ -285,12 +289,14 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public static <InboundT, OutboundT, ControlT>
 	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newConcurrentClientResponseObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
+		BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					? super ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+				> onErrorHandler,
+		Consumer<? super ClientCallStreamObserver<ControlT>> onBeforeStartHandler
 	) {
 		return new ConcurrentInboundObserver<>(
 			outboundObserver,
@@ -312,7 +318,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     params.
 	 */
 	protected ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
 	) {
@@ -331,7 +337,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     Consumer) newConcurrentClientResponseObserver(...) for descriptions of the params
 	 */
 	protected ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages
 	) {
 		this(
@@ -339,7 +345,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 			maxConcurrentMessages,
 			null,
 			null,
-			(Consumer<ClientCallStreamObserver<ControlT>>) null
+			(Consumer<? super ClientCallStreamObserver<ControlT>>) null
 		);
 	}
 
@@ -414,7 +420,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 * Consumer) newConcurrentClientResponseObserver(...)} "constructors".
 	 */
-	protected final BiConsumer<InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler;
+	protected final BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>>
+			onInboundMessageHandler;
 
 
 
@@ -439,8 +446,10 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * The second parameter is a reference to the calling inbound observer, it may be used to call
 	 * {@link #reportErrorAfterAllTasksComplete(Throwable)} or {@link #onCompleted()}.
 	 */
-	protected final BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-			onErrorHandler;
+	protected final BiConsumer<
+				? super Throwable,
+				? super ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+			> onErrorHandler;
 
 
 
@@ -461,7 +470,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 * Consumer) newConcurrentClientResponseObserver(...)} "constructor".
 	 */
-	protected final Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler;
+	protected final Consumer<? super ClientCallStreamObserver<ControlT>> onBeforeStartHandler;
 
 
 
@@ -533,39 +542,40 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	/** Low-level constructor for server observers. */
 	ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-			onErrorHandler,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+		BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					? super ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+				> onErrorHandler,
+		ServerCallStreamObserver<ControlT> inboundControlObserver
 	) {
 		this(
 			outboundObserver,
 			maxConcurrentMessages,
 			onInboundMessageHandler,
 			onErrorHandler,
-			(Consumer<ClientCallStreamObserver<ControlT>>) null
+			(Consumer<? super ClientCallStreamObserver<ControlT>>) null
 		);
 		setInboundControlObserver(inboundControlObserver);
 	}
 
 	/** Lowest level constructor that does the actual initialization. */
 	ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
+		CallStreamObserver<OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-			onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
+		BiConsumer<? super InboundT, ? super SubstreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<
+					? super Throwable,
+					? super ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+				> onErrorHandler,
+		Consumer<? super ClientCallStreamObserver<ControlT>> onBeforeStartHandler
 	) {
-		@SuppressWarnings("unchecked")  // this is safe as outbound observers are only sinks
-		final var tmp = (CallStreamObserver<OutboundT>) outboundObserver;
-		this.outboundObserver = tmp;
+		this.outboundObserver = outboundObserver;
 		idleCount = maxConcurrentMessages;
-		this.onInboundMessageHandler =
-				onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
-		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
+		this.onInboundMessageHandler = onInboundMessageHandler;
+		this.onErrorHandler = onErrorHandler;
 		this.onBeforeStartHandler = onBeforeStartHandler;
 		outboundObserver.setOnReadyHandler(this::onReady);
 	}
