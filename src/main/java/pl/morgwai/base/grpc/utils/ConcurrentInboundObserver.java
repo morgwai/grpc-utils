@@ -75,6 +75,265 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
+	 * Creates a server method request observer for gRPC methods that don't issue any nested calls
+	 * and pass processing results directly to method's response observer.
+	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler} and
+	 * {@link #onErrorHandler}.
+	 * <p>
+	 * Example:</p>
+	 * <pre>
+	 * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
+	 *         StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+	 *     final var responseObserver =
+	 *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
+	 *     return newSimpleConcurrentServerRequestObserver(
+	 *         responseObserver,
+	 *         MAX_CONCURRENTLY_PROCESSED_REQUESTS,
+	 *         (request, individualRequestProcessingResultsObserver) -&gt; executor.execute(
+	 *             () -&gt; {
+	 *                 final var result = process(request);
+	 *                 individualRequestProcessingResultsObserver.onNext(result);
+	 *                 individualRequestProcessingResultsObserver.onCompleted();
+	 *             }
+	 *         ),
+	 *         (error, thisObserver) -&gt; {
+	 *             // client cancelled, abort ongoing tasks if needed
+	 *         }
+	 *     );
+	 * }</pre>
+	 *
+	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
+	 *     params.
+	 */
+	public static <InboundT, OutboundT>
+	ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>
+	newSimpleConcurrentServerRequestObserver(
+		ServerCallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>>
+				onErrorHandler
+	) {
+		return newConcurrentServerRequestObserver(
+			outboundObserver,
+			maxConcurrentMessages,
+			onInboundMessageHandler,
+			onErrorHandler,
+			outboundObserver
+		);
+	}
+
+	/**
+	 * Creates a server method request observer for gRPC methods that may issue some nested call(s).
+	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler} and
+	 * {@link #onErrorHandler}.
+	 * <p>
+	 * Example:</p>
+	 * <pre>
+	 * public StreamObserver&lt;ParentRequest&gt; parentRpc(
+	 *         StreamObserver&lt;ParentResponse&gt; responseObserver) {
+	 *     final var parentResponseObserver =
+	 *             (ServerCallStreamObserver&lt;ParentResponse&gt;) responseObserver;
+	 *     final StreamObserver&lt;ParentRequest&gt;[] parentRequestObserverHolder =
+	 *             new StreamObserver[1];
+	 *     nestedServiceStub.nestedRpc(newConcurrentClientResponseObserver(
+	 *         parentResponseObserver,
+	 *         MAX_CONCURRENTLY_PROCESSED_NESTED_RESPONSES,
+	 *         (nestedResponse, individualNestedResponseProcessingResultsObserver) -&gt; {
+	 *             final var parentResponse = postProcess(nestedResponse);
+	 *             individualNestedResponseProcessingResultsObserver.onNext(parentResponse);
+	 *             individualNestedResponseProcessingResultsObserver.onCompleted();
+	 *         },
+	 *         (error, thisObserver) -&gt; {
+	 *             thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+	 *             thisObserver.onCompleted();
+	 *         },
+	 *         (nestedCallRequestObserver) -&gt; {
+	 *             parentRequestObserverHolder[0] = newConcurrentServerRequestObserver(
+	 *                 nestedCallRequestObserver,
+	 *                 MAX_CONCURRENTLY_PROCESSED_PARENT_REQUESTS,
+	 *                 (parentRequest, individualParentRequestProcessingResultsObserver) -&gt; {
+	 *                     final var nestedRequest = preProcess(parentRequest);
+	 *                     individualParentRequestProcessingResultsObserver.onNext(nestedRequest);
+	 *                     individualParentRequestProcessingResultsObserver.onCompleted();
+	 *                 },
+	 *                 (error, thisObserver) -&gt; {
+	 *                     // client cancelled, abort tasks if needed
+	 *                 },
+	 *                 parentResponseObserver
+	 *             );
+	 *         }
+	 *     ));
+	 *     return parentRequestObserverHolder[0];
+	 * }</pre>
+	 * @param outboundObserver request observer of the client call to which results should be
+	 *     streamed (or response observer of the given server method in case of
+	 *     {@link #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int,
+	 *     BiConsumer, BiConsumer) simple methods without any nested calls}).
+	 * @param maxConcurrentMessages the constructed observer will call
+	 *     {@code request(maxConcurrentMessages)} on the {@code inboundControlObserver} (passed via
+	 *     the param below or {@link #beforeStart(ClientCallStreamObserver)} param in case of
+	 *     {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer,
+	 *     BiConsumer, Consumer) client response observers}). If message processing is dispatched to
+	 *     other threads, this will be the maximum number of inbound messages processed
+	 *     concurrently. It should correspond to server's concurrent processing capabilities.
+	 * @param onInboundMessageHandler stored on {@link #onInboundMessageHandler} to be called by
+	 *     {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+	 *     onInboundMessageHandler(...)}.
+	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
+	 *     {@link #onError(Throwable)}.
+	 * @param inboundControlObserver server response observer of the given RPC method used for
+	 *     inbound control: {@link ServerCallStreamObserver#disableAutoInboundFlowControl()
+	 *     inboundControlObserver.disableAutoInboundFlowControl()} will be called once at the
+	 *     beginning and {@link ServerCallStreamObserver#request(int)
+	 *     inboundControlObserver.request(k)} several times throughout the lifetime of the given RPC
+	 *     call processing. In case of {@link #newSimpleConcurrentServerRequestObserver(
+	 *     ServerCallStreamObserver, int, BiConsumer, BiConsumer) simple methods without any nested
+	 *     calls}, {@code inboundControlObserver} and {@code outboundObserver} will be the same
+	 *     object.
+	 *
+	 * @see #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int, BiConsumer,
+	 *    BiConsumer) newSimpleConcurrentServerRequestObserver(...) that is a bit more convenient in
+	 *    case there are no nested calls.
+	 */
+	public static <InboundT, OutboundT, ControlT>
+	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+	newConcurrentServerRequestObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+	) {
+		return new ConcurrentInboundObserver<>(
+			outboundObserver,
+			maxConcurrentMessages,
+			onInboundMessageHandler,
+			onErrorHandler,
+			inboundControlObserver
+		);
+	}
+
+	/**
+	 * Creates a client response observer.
+	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler},
+	 * {@link #onErrorHandler} and {@link #onBeforeStartHandler}.
+	 * <p>
+	 * Chained call example:</p>
+	 * <pre>
+	 * stub.chainedCall(new ClientResponseObserver&lt;ChainedRequest, ChainedResponse&gt;() {
+	 *
+	 *     &commat;Override
+	 *     public void beforeStart(
+	 *             ClientCallStreamObserver&lt;ChainedRequest&gt; chainedRequestObserver) {
+	 *         anotherStub.firstCall(newConcurrentClientResponseObserver(
+	 *             chainedRequestObserver,
+	 *             MAX_CONCURRENTLY_PROCESSED_FIRST_CALL_RESPONSES,
+	 *             (firstCallResponse, individualFirstCallResponseProcessingResultsObserver) -&gt; {
+	 *                 final var chainedRequest = midProcess(firstCallResponse);
+	 *                 individualFirstCallResponseProcessingResultsObserver.onNext(chainedRequest);
+	 *                 individualFirstCallResponseProcessingResultsObserver.onCompleted();
+	 *             },
+	 *             (error, thisObserver) -&gt; {
+	 *                 thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+	 *                 thisObserver.onCompleted();
+	 *             },
+	 *             (ClientCallStreamObserver&lt;FirstCallRequest&gt; firstCallRequestObserver) -&gt;
+	 *                     copyWithFlowControl(firstCallRequestProducer, firstCallRequestObserver)
+	 *         ));
+	 *     }
+	 *
+	 *     &commat;Override public void onNext(ChainedResponse chainedResponse) {
+	 *         // display chainedResponse on the UI
+	 *     }
+	 *     &commat;Override public void onError(Throwable error) {
+	 *         // display some error message on the UI
+	 *     }
+	 *     &commat;Override public void onCompleted() {
+	 *         // display some completion message on the UI
+	 *     }
+	 * });</pre>
+	 * <p>
+	 * See {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer,
+	 * BiConsumer, ServerCallStreamObserver) newConcurrentServerRequestObserver(...)} for a nested
+	 * call example.</p>
+	 *
+	 * @param onBeforeStartHandler stored on {@link #onBeforeStartHandler} to be called by
+	 *     {@link #onBeforeStart(ClientCallStreamObserver)} called by
+	 *     {@link #beforeStart(ClientCallStreamObserver)}. May be empty in case of the first of
+	 *     a chained calls sequence issued by end-clients (not nested in any server methods) if
+	 *     there's no need to use {@link CallStreamObserver#setOnReadyHandler(Runnable)} method.
+	 *
+	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
+	 *     remaining params
+	 */
+	public static <InboundT, OutboundT, ControlT>
+	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
+	newConcurrentClientResponseObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+				onErrorHandler,
+		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
+	) {
+		return new ConcurrentInboundObserver<>(
+			outboundObserver,
+			maxConcurrentMessages,
+			onInboundMessageHandler,
+			onErrorHandler,
+			onBeforeStartHandler
+		);
+	}
+
+	/**
+	 * Creates a server method request observer and configures its flow-control.
+	 * Constructor for those who prefer to override methods rather than provide functional handlers
+	 * as params. At least
+	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+	 * onInboundMessage(...)} must be overridden.
+	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
+	 *     params.
+	 */
+	protected ConcurrentInboundObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+	) {
+		this(outboundObserver, maxConcurrentMessages, null, null,
+			(Consumer<ClientCallStreamObserver<ControlT>>) null);
+		setInboundControlObserver(inboundControlObserver);
+	}
+
+	/**
+	 * Creates a client response observer and configures its flow-control.
+	 * Constructor for those who prefer to override methods rather than provide functional handlers
+	 * as params. At least
+	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+	 * onInboundMessage(...)} must be overridden.
+	 * @see #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 *     Consumer) newConcurrentClientResponseObserver(...) for descriptions of the params
+	 */
+	protected ConcurrentInboundObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages
+	) {
+		this(
+			outboundObserver,
+			maxConcurrentMessages,
+			null,
+			null,
+			(Consumer<ClientCallStreamObserver<ControlT>>) null
+		);
+	}
+
+
+
+	/**
 	 * Called by {@link #onNext(Object) onNext(inboundMessage)}, processes {@code inboundMessage}.
 	 * Resulting outbound messages must be passed to {@code individualInboundMessageResultsObserver}
 	 * associated with this given {@code inboundMessage} using
@@ -194,301 +453,57 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
-	) {
-		this(
-			outboundObserver,
-			maxConcurrentMessages,
-			onInboundMessageHandler,
-			onErrorHandler,
-			(Consumer<ClientCallStreamObserver<ControlT>>) null
-		);
-		setInboundControlObserver(inboundControlObserver);
-	}
-
 	/**
-	 * Creates a server method request observer for gRPC methods that may issue some nested call(s).
-	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler} and
-	 * {@link #onErrorHandler}.
+	 * Indicates that after all tasks and the inbound stream are completed, {@code errorToReport}
+	 * should be nevertheless reported via
+	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}.
 	 * <p>
-	 * Example:</p>
-	 * <pre>
-	 * public StreamObserver&lt;ParentRequest&gt; parentRpc(
-	 *         StreamObserver&lt;ParentResponse&gt; responseObserver) {
-	 *     final var parentResponseObserver =
-	 *             (ServerCallStreamObserver&lt;ParentResponse&gt;) responseObserver;
-	 *     final StreamObserver&lt;ParentRequest&gt;[] parentRequestObserverHolder =
-	 *             new StreamObserver[1];
-	 *     nestedServiceStub.nestedRpc(newConcurrentClientResponseObserver(
-	 *         parentResponseObserver,
-	 *         MAX_CONCURRENTLY_PROCESSED_NESTED_RESPONSES,
-	 *         (nestedResponse, individualNestedResponseProcessingResultsObserver) -&gt; {
-	 *             final var parentResponse = postProcess(nestedResponse);
-	 *             individualNestedResponseProcessingResultsObserver.onNext(parentResponse);
-	 *             individualNestedResponseProcessingResultsObserver.onCompleted();
-	 *         },
-	 *         (error, thisObserver) -&gt; {
-	 *             thisObserver.reportErrorAfterTasksAndInboundComplete(error);
-	 *             thisObserver.onCompleted();
-	 *         },
-	 *         (nestedCallRequestObserver) -&gt; {
-	 *             parentRequestObserverHolder[0] = newConcurrentServerRequestObserver(
-	 *                 nestedCallRequestObserver,
-	 *                 MAX_CONCURRENTLY_PROCESSED_PARENT_REQUESTS,
-	 *                 (parentRequest, individualParentRequestProcessingResultsObserver) -&gt; {
-	 *                     final var nestedRequest = preProcess(parentRequest);
-	 *                     individualParentRequestProcessingResultsObserver.onNext(nestedRequest);
-	 *                     individualParentRequestProcessingResultsObserver.onCompleted();
-	 *                 },
-	 *                 (error, thisObserver) -&gt; {
-	 *                     // client cancelled, abort tasks if needed
-	 *                 },
-	 *                 parentResponseObserver
-	 *             );
-	 *         }
-	 *     ));
-	 *     return parentRequestObserverHolder[0];
-	 * }</pre>
-	 * @param outboundObserver request observer of the client call to which results should be
-	 *     streamed (or response observer of the given server method in case of
-	 *     {@link #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int,
-	 *     BiConsumer, BiConsumer) simple methods without any nested calls}).
-	 * @param maxConcurrentMessages the constructed observer will call
-	 *     {@code request(maxConcurrentMessages)} on the {@code inboundControlObserver} (passed via
-	 *     the param below or {@link #beforeStart(ClientCallStreamObserver)} param in case of
-	 *     {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer,
-	 *     BiConsumer, Consumer) client response observers}). If message processing is dispatched to
-	 *     other threads, this will be the maximum number of inbound messages processed
-	 *     concurrently. It should correspond to server's concurrent processing capabilities.
-	 * @param onInboundMessageHandler stored on {@link #onInboundMessageHandler} to be called by
-	 *     {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 *     onInboundMessageHandler(...)}.
-	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
-	 *     {@link #onError(Throwable)}.
-	 * @param inboundControlObserver server response observer of the given RPC method used for
-	 *     inbound control: {@link ServerCallStreamObserver#disableAutoInboundFlowControl()
-	 *     inboundControlObserver.disableAutoInboundFlowControl()} will be called once at the
-	 *     beginning and {@link ServerCallStreamObserver#request(int)
-	 *     inboundControlObserver.request(k)} several times throughout the lifetime of the given RPC
-	 *     call processing. In case of {@link #newSimpleConcurrentServerRequestObserver(
-	 *     ServerCallStreamObserver, int, BiConsumer, BiConsumer) simple methods without any nested
-	 *     calls}, {@code inboundControlObserver} and {@code outboundObserver} will be the same
-	 *     object.
-	 *
-	 * @see #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int, BiConsumer,
-	 *    BiConsumer) newSimpleConcurrentServerRequestObserver(...) that is a bit more convenient in
-	 *    case there are no nested calls.
-	 */
-	public static <InboundT, OutboundT, ControlT>
-	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
-	newConcurrentServerRequestObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
-	) {
-		return new ConcurrentInboundObserver<>(
-			outboundObserver,
-			maxConcurrentMessages,
-			onInboundMessageHandler,
-			onErrorHandler,
-			inboundControlObserver
-		);
-	}
-
-	/**
-	 * Creates a server method request observer for gRPC methods that don't issue any nested calls
-	 * and pass processing results directly to method's response observer.
-	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler} and
-	 * {@link #onErrorHandler}.
+	 * If after this method is called, any of the remaining individual outbound substream observers
+	 * gets a call to its {@link OutboundSubstreamObserver#onError(Throwable) onError(errror)}, then
+	 * {@code errorToReport} will be discarded.</p>
 	 * <p>
-	 * Example:</p>
-	 * <pre>
-	 * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
-	 *         StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
-	 *     final var responseObserver =
-	 *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
-	 *     return newSimpleConcurrentServerRequestObserver(
-	 *         responseObserver,
-	 *         MAX_CONCURRENTLY_PROCESSED_REQUESTS,
-	 *         (request, individualRequestProcessingResultsObserver) -&gt; executor.execute(
-	 *             () -&gt; {
-	 *                 final var result = process(request);
-	 *                 individualRequestProcessingResultsObserver.onNext(result);
-	 *                 individualRequestProcessingResultsObserver.onCompleted();
-	 *             }
-	 *         ),
-	 *         (error, thisObserver) -&gt; {
-	 *             // client cancelled, abort ongoing tasks if needed
-	 *         }
-	 *     );
-	 * }</pre>
-	 *
-	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
-	 *     params.
-	 */
-	public static <InboundT, OutboundT>
-	ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>
-	newSimpleConcurrentServerRequestObserver(
-		ServerCallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>>
-				onErrorHandler
-	) {
-		return newConcurrentServerRequestObserver(
-			outboundObserver,
-			maxConcurrentMessages,
-			onInboundMessageHandler,
-			onErrorHandler,
-			outboundObserver
-		);
-	}
-
-	/**
-	 * Creates a server method request observer and configures its flow-control.
-	 * Constructor for those who prefer to override methods rather than provide functional handlers
-	 * as params. At least
+	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
+	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.<br/>
+	 * If it's called in
 	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)} must be overridden.
-	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
-	 *     params.
+	 * onInboundMessage(...)}, it should be followed by
+	 * {@link OutboundSubstreamObserver#onCompleted() individualObserver.onCompleted()}.</p>
 	 */
-	protected ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		ServerCallStreamObserver<? super ControlT> inboundControlObserver
-	) {
-		this(outboundObserver, maxConcurrentMessages, null, null,
-				(Consumer<ClientCallStreamObserver<ControlT>>) null);
-		setInboundControlObserver(inboundControlObserver);
+	public final void reportErrorAfterTasksAndInboundComplete(Throwable errorToReport) {
+		synchronized (lock) {
+			this.errorToReport = errorToReport;
+		}
 	}
 
 
-
-	ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
-	) {
-		@SuppressWarnings("unchecked")  // this is safe as outbound observers are only sinks
-		final var tmp = (CallStreamObserver<OutboundT>) outboundObserver;
-		this.outboundObserver = tmp;
-		idleCount = maxConcurrentMessages;
-		this.onInboundMessageHandler =
-				onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
-		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
-		this.onBeforeStartHandler = onBeforeStartHandler;
-		outboundObserver.setOnReadyHandler(this::onReady);
-	}
 
 	/**
-	 * Creates a client response observer.
-	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler},
-	 * {@link #onErrorHandler} and {@link #onBeforeStartHandler}.
+	 * Creates a new {@link OutboundSubstreamObserver outbound substream}. This method is
+	 * called each time a new inbound message arrives in {@link #onNext(Object)}.
 	 * <p>
-	 * Chained call example:</p>
-	 * <pre>
-	 * stub.chainedCall(new ClientResponseObserver&lt;ChainedRequest, ChainedResponse&gt;() {
-	 *
-	 *     &commat;Override
-	 *     public void beforeStart(
-	 *             ClientCallStreamObserver&lt;ChainedRequest&gt; chainedRequestObserver) {
-	 *         anotherStub.firstCall(newConcurrentClientResponseObserver(
-	 *             chainedRequestObserver,
-	 *             MAX_CONCURRENTLY_PROCESSED_FIRST_CALL_RESPONSES,
-	 *             (firstCallResponse, individualFirstCallResponseProcessingResultsObserver) -&gt; {
-	 *                 final var chainedRequest = midProcess(firstCallResponse);
-	 *                 individualFirstCallResponseProcessingResultsObserver.onNext(chainedRequest);
-	 *                 individualFirstCallResponseProcessingResultsObserver.onCompleted();
-	 *             },
-	 *             (error, thisObserver) -&gt; {
-	 *                 thisObserver.reportErrorAfterTasksAndInboundComplete(error);
-	 *                 thisObserver.onCompleted();
-	 *             },
-	 *             (ClientCallStreamObserver&lt;FirstCallRequest&gt; firstCallRequestObserver) -&gt;
-	 *                     copyWithFlowControl(firstCallRequestProducer, firstCallRequestObserver)
-	 *         ));
-	 *     }
-	 *
-	 *     &commat;Override public void onNext(ChainedResponse chainedResponse) {
-	 *         // display chainedResponse on the UI
-	 *     }
-	 *     &commat;Override public void onError(Throwable error) {
-	 *         // display some error message on the UI
-	 *     }
-	 *     &commat;Override public void onCompleted() {
-	 *         // display some completion message on the UI
-	 *     }
-	 * });</pre>
+	 * Applications may also create additional outbound substreams to send outbound messages not
+	 * related to any inbound message: the parent {@code outboundObserver} will not be marked as
+	 * completed until all substreams are completed.<br/>
+	 * After creating an additional substream and
+	 * {@link OutboundSubstreamObserver#setOnReadyHandler(Runnable) setting its onReadyHandler}, it
+	 * may be necessary to manually deliver the first {@link OutboundSubstreamObserver#onReady()
+	 * onReady() call}.</p>
 	 * <p>
-	 * See {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer,
-	 * BiConsumer, ServerCallStreamObserver) newConcurrentServerRequestObserver(...)} for a nested
-	 * call example.</p>
-	 *
-	 * @param onBeforeStartHandler stored on {@link #onBeforeStartHandler} to be called by
-	 *     {@link #onBeforeStart(ClientCallStreamObserver)} called by
-	 *     {@link #beforeStart(ClientCallStreamObserver)}. May be empty in case of the first of
-	 *     a chained calls sequence issued by end-clients (not nested in any server methods) if
-	 *     there's no need to use {@link CallStreamObserver#setOnReadyHandler(Runnable)} method.
-	 *
-	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
-	 *     remaining params
+	 * Subclasses may override this method if they need to use specialized subclasses of
+	 * {@link OutboundSubstreamObserver OutboundSubstreamObserver}: see
+	 * {@link OrderedConcurrentInboundObserver#newOutboundSubstream()} for an example.</p>
 	 */
-	public static <InboundT, OutboundT, ControlT>
-	ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
-	newConcurrentClientResponseObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
-		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
-				onErrorHandler,
-		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
-	) {
-		return new ConcurrentInboundObserver<>(
-			outboundObserver,
-			maxConcurrentMessages,
-			onInboundMessageHandler,
-			onErrorHandler,
-			onBeforeStartHandler
-		);
+	public OutboundSubstreamObserver newOutboundSubstream() {
+		return new OutboundSubstreamObserver();
 	}
 
+
+
 	/**
-	 * Creates a client response observer and configures its flow-control.
-	 * Constructor for those who prefer to override methods rather than provide functional handlers
-	 * as params. At least
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)} must be overridden.
-	 * @see #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
-	 *     Consumer) newConcurrentClientResponseObserver(...) for descriptions of the params
+	 * Called at the beginning of {@link #onCompleted()}. Subclasses may override this method if
+	 * some additional action is required once the inbound stream is closed by the remote peer,
 	 */
-	protected ConcurrentInboundObserver(
-		CallStreamObserver<? super OutboundT> outboundObserver,
-		int maxConcurrentMessages
-	) {
-		this(
-			outboundObserver,
-			maxConcurrentMessages,
-			null,
-			null,
-			(Consumer<ClientCallStreamObserver<ControlT>>) null
-		);
-	}
+	protected void onHalfClosed() {}
 
 
 
@@ -501,6 +516,47 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	Throwable errorToReport;
 
 	final Object lock = new Object();
+
+
+
+	/** Low-level constructor for server observers. */
+	ConcurrentInboundObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+			onErrorHandler,
+		ServerCallStreamObserver<? super ControlT> inboundControlObserver
+	) {
+		this(
+			outboundObserver,
+			maxConcurrentMessages,
+			onInboundMessageHandler,
+			onErrorHandler,
+			(Consumer<ClientCallStreamObserver<ControlT>>) null
+		);
+		setInboundControlObserver(inboundControlObserver);
+	}
+
+	/** Lowest level constructor that does the actual initialization. */
+	ConcurrentInboundObserver(
+		CallStreamObserver<? super OutboundT> outboundObserver,
+		int maxConcurrentMessages,
+		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
+			onErrorHandler,
+		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
+	) {
+		@SuppressWarnings("unchecked")  // this is safe as outbound observers are only sinks
+		final var tmp = (CallStreamObserver<OutboundT>) outboundObserver;
+		this.outboundObserver = tmp;
+		idleCount = maxConcurrentMessages;
+		this.onInboundMessageHandler =
+			onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
+		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
+		this.onBeforeStartHandler = onBeforeStartHandler;
+		outboundObserver.setOnReadyHandler(this::onReady);
+	}
 
 
 
@@ -575,30 +631,6 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Indicates that after all tasks and the inbound stream are completed, {@code errorToReport}
-	 * should be nevertheless reported via
-	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}.
-	 * <p>
-	 * If after this method is called, any of the remaining individual outbound substream observers
-	 * gets a call to its {@link OutboundSubstreamObserver#onError(Throwable) onError(errror)}, then
-	 * {@code errorToReport} will be discarded.</p>
-	 * <p>
-	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
-	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.<br/>
-	 * If it's called in
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)}, it should be followed by
-	 * {@link OutboundSubstreamObserver#onCompleted() individualObserver.onCompleted()}.</p>
-	 */
-	public final void reportErrorAfterTasksAndInboundComplete(Throwable errorToReport) {
-		synchronized (lock) {
-			this.errorToReport = errorToReport;
-		}
-	}
-
-
-
-	/**
 	 * Calls {@link #onHalfClosed()}, marks the inbound as completed and if all
 	 * {@link #newOutboundSubstream() outbound substreams} are marked as completed, then marks
 	 * the parent {@code outboundObserver} as completed also.
@@ -616,34 +648,6 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 				}
 			}
 		}
-	}
-
-	/**
-	 * Called at the beginning of {@link #onCompleted()}. Subclasses may override this method if
-	 * some additional action is required once the inbound stream is closed by the remote peer,
-	 */
-	protected void onHalfClosed() {}
-
-
-
-	/**
-	 * Creates a new {@link OutboundSubstreamObserver outbound substream}. This method is
-	 * called each time a new inbound message arrives in {@link #onNext(Object)}.
-	 * <p>
-	 * Applications may also create additional outbound substreams to send outbound messages not
-	 * related to any inbound message: the parent {@code outboundObserver} will not be marked as
-	 * completed until all substreams are completed.<br/>
-	 * After creating an additional substream and
-	 * {@link OutboundSubstreamObserver#setOnReadyHandler(Runnable) setting its onReadyHandler}, it
-	 * may be necessary to manually deliver the first {@link OutboundSubstreamObserver#onReady()
-	 * onReady() call}.</p>
-	 * <p>
-	 * Subclasses may override this method if they need to use specialized subclasses of
-	 * {@link OutboundSubstreamObserver OutboundSubstreamObserver}: see
-	 * {@link OrderedConcurrentInboundObserver#newOutboundSubstream()} for an example.</p>
-	 */
-	public OutboundSubstreamObserver newOutboundSubstream() {
-		return new OutboundSubstreamObserver();
 	}
 
 
