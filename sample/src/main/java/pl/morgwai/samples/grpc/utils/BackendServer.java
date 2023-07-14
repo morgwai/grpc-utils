@@ -126,7 +126,7 @@ public class BackendServer extends BackendImplBase {
 						} catch (IOException e) {
 							System.out.println(
 									"BACKEND: keep processing but report the error at the end");
-							reportErrorAfterTasksAndInboundComplete(
+							reportErrorAfterAllTasksComplete(
 									Status.INTERNAL.withCause(e).asException());
 							individualObserver.onCompleted();
 						} catch (InterruptedException e) {

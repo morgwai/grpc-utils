@@ -74,6 +74,18 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+	/** See {@link ConcurrentInboundObserver.OutboundSubstreamObserver} */
+	public static abstract class SubstreamObserver<MessageT> extends CallStreamObserver<MessageT> {
+
+		/** See {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)} */
+		public abstract void reportErrorAfterAllTasksComplete(Throwable errorToReport);
+
+		/** See {@link ConcurrentInboundObserver#newOutboundSubstream()} */
+		public abstract SubstreamObserver<MessageT> newOutboundSubstream();
+	}
+
+
+
 	/**
 	 * Creates a server method request observer for gRPC methods that don't issue any nested calls
 	 * and pass processing results directly to method's response observer.
@@ -111,7 +123,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newSimpleConcurrentServerRequestObserver(
 		ServerCallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
 		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, OutboundT>>
 				onErrorHandler
 	) {
@@ -202,7 +214,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newConcurrentServerRequestObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
 		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 				onErrorHandler,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
@@ -275,7 +287,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	newConcurrentClientResponseObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
 		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 				onErrorHandler,
 		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
@@ -402,7 +414,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 * Consumer) newConcurrentClientResponseObserver(...)} "constructors".
 	 */
-	protected final BiConsumer<InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler;
+	protected final BiConsumer<InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler;
 
 
 
@@ -425,7 +437,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 * Consumer) newConcurrentClientResponseObserver(...)} "constructors".
 	 * The second parameter is a reference to the calling inbound observer, it may be used to call
-	 * {@link #reportErrorAfterTasksAndInboundComplete(Throwable)} or {@link #onCompleted()}.
+	 * {@link #reportErrorAfterAllTasksComplete(Throwable)} or {@link #onCompleted()}.
 	 */
 	protected final BiConsumer<Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 			onErrorHandler;
@@ -469,7 +481,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * onInboundMessage(...)}, it should be followed by
 	 * {@link OutboundSubstreamObserver#onCompleted() individualObserver.onCompleted()}.</p>
 	 */
-	public final void reportErrorAfterTasksAndInboundComplete(Throwable errorToReport) {
+	public final void reportErrorAfterAllTasksComplete(Throwable errorToReport) {
 		synchronized (lock) {
 			this.errorToReport = errorToReport;
 		}
@@ -523,7 +535,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	ConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
 		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 			onErrorHandler,
 		ServerCallStreamObserver<? super ControlT> inboundControlObserver
@@ -542,7 +554,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	ConcurrentInboundObserver(
 		CallStreamObserver<? super OutboundT> outboundObserver,
 		int maxConcurrentMessages,
-		BiConsumer<? super InboundT, CallStreamObserver<OutboundT>> onInboundMessageHandler,
+		BiConsumer<? super InboundT, SubstreamObserver<OutboundT>> onInboundMessageHandler,
 		BiConsumer<? super Throwable, ConcurrentInboundObserver<InboundT, OutboundT, ControlT>>
 			onErrorHandler,
 		Consumer<ClientCallStreamObserver<ControlT>> onBeforeStartHandler
@@ -552,7 +564,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		this.outboundObserver = tmp;
 		idleCount = maxConcurrentMessages;
 		this.onInboundMessageHandler =
-			onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
+				onInboundMessageHandler != null ? onInboundMessageHandler::accept : null;
 		this.onErrorHandler = onErrorHandler != null ? onErrorHandler::accept : null;
 		this.onBeforeStartHandler = onBeforeStartHandler;
 		outboundObserver.setOnReadyHandler(this::onReady);
@@ -658,7 +670,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * substreams are marked as completed.
 	 * @see #newOutboundSubstream()
 	 */
-	public class OutboundSubstreamObserver extends CallStreamObserver<OutboundT> {
+	public class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
 
 		// Listener's / parent observer's concurrency contract makes it unnecessary to synchronize
 		// setting or calling onReadyHandler, but calling and setting may still be performed by
@@ -766,6 +778,22 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		public void onReady() {
 			// TODO: maybe lock onReadyHandler
 			if (onReadyHandler != null) onReadyHandler.run();
+		}
+
+
+
+		/** Calls {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)} */
+		@Override
+		public final void reportErrorAfterAllTasksComplete(Throwable errorToReport) {
+			ConcurrentInboundObserver.this.reportErrorAfterAllTasksComplete(errorToReport);
+		}
+
+
+
+		/** Calls {@link ConcurrentInboundObserver#newOutboundSubstream()} */
+		@Override
+		public SubstreamObserver<OutboundT> newOutboundSubstream() {
+			return ConcurrentInboundObserver.this.newOutboundSubstream();
 		}
 
 

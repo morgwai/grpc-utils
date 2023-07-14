@@ -172,7 +172,7 @@ public class SqueezedServer extends FrontendImplBase {
 				} else {
 					System.out.println("SQUEEZED: error during chained, waiting for ongoing tasks"
 							+ " and forwarding to parent: " + error);
-					thisObserver.reportErrorAfterTasksAndInboundComplete(error);
+					thisObserver.reportErrorAfterAllTasksComplete(error);
 					thisObserver.onCompleted();
 				}
 			},

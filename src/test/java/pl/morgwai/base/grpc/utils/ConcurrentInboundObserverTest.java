@@ -14,6 +14,7 @@ import com.google.common.collect.Comparators;
 import io.grpc.stub.CallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.junit.*;
+import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.util.concurrent.Awaitable;
 
@@ -49,7 +50,7 @@ public abstract class ConcurrentInboundObserverTest {
 	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
-		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
+		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	);
@@ -197,21 +198,17 @@ public abstract class ConcurrentInboundObserverTest {
 	public void testReportErrorAfterTasksAndInboundComplete() throws InterruptedException {
 		final var numberOfInboundMessages = 10;
 		final var error = new Exception("errorToReport");
-		@SuppressWarnings("unchecked")
-		final ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>[] holder =
-				new ConcurrentInboundObserver[1];
 		final var testSubject = newConcurrentInboundObserver(
 			2,
 			(inboundMessage, individualObserver) -> {
 				if (inboundMessage.id == 2) {
-					holder[0].reportErrorAfterTasksAndInboundComplete(error);
+					individualObserver.reportErrorAfterAllTasksComplete(error);
 				}
 				individualObserver.onNext(new OutboundMessage(inboundMessage.id));
 				individualObserver.onCompleted();
 			},
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
-		holder[0] = testSubject;
 
 		fakeOutboundObserver.startMessageDelivery(
 				testSubject, new InboundMessageProducer(numberOfInboundMessages));

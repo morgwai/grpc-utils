@@ -3,7 +3,7 @@ package pl.morgwai.base.grpc.utils;
 
 import java.util.function.BiConsumer;
 
-import io.grpc.stub.CallStreamObserver;
+import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 
 
 
@@ -15,7 +15,7 @@ public class OrderedConcurrentResponseObserverSendingToChainedTest
 	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
-		BiConsumer<InboundMessage, CallStreamObserver<OutboundMessage>> messageHandler,
+		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
