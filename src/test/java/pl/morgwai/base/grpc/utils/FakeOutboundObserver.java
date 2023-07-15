@@ -432,7 +432,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 
 
-	/** For {@link ConcurrentRequestObserverNoNestingTest}. */
+	/** For {@link SimpleServerRequestObserverTests}. */
 	ServerCallStreamObserver<OutboundT> asServerCallResponseObserver() {
 		return new ServerCallStreamObserver<>() {
 			// ServerCallStreamObserver
@@ -466,7 +466,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		};
 	}
 
-	/** For {@link ConcurrentRequestObserverSendingToNestedTest}. */
+	/** For {@link ServerRequestObserverTests}. */
 	ClientCallStreamObserver<OutboundT> asClientCallRequestObserver() {
 		return new ClientCallStreamObserver<>() {
 			// ClientCallStreamObserver

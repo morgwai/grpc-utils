@@ -7,8 +7,7 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 
 
 
-public class OrderedConcurrentRequestObserverNoNestingTest
-		extends OrderedConcurrentInboundObserverTest {
+public class OrderedNestedClientResponseObserverTests extends OrderedConcurrentInboundObserverTest {
 
 
 
@@ -19,11 +18,12 @@ public class OrderedConcurrentRequestObserverNoNestingTest
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
-		return OrderedConcurrentInboundObserver.newSimpleOrderedConcurrentServerRequestObserver(
+		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
 			fakeOutboundObserver.asServerCallResponseObserver(),
 			maxConcurrentMessages,
 			messageHandler,
-			onErrorHandler
+			onErrorHandler,
+			(inboundControlObserver) -> {}
 		);
 	}
 }

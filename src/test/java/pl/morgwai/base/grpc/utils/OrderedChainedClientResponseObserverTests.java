@@ -7,8 +7,8 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 
 
 
-public class OrderedConcurrentResponseObserverSendingToParentTest
-		extends OrderedConcurrentInboundObserverTest {
+public class OrderedChainedClientResponseObserverTests extends OrderedConcurrentInboundObserverTest
+{
 
 
 
@@ -20,7 +20,7 @@ public class OrderedConcurrentResponseObserverSendingToParentTest
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
-			fakeOutboundObserver.asServerCallResponseObserver(),
+			fakeOutboundObserver.asClientCallRequestObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

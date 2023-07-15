@@ -7,24 +7,22 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 
 
 
-public class ConcurrentResponseObserverSendingToParentTest extends ConcurrentInboundObserverTest {
+public class SimpleServerRequestObserverTests extends ConcurrentInboundObserverTest {
 
 
 
-	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
 				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
 	) {
-		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
+		return ConcurrentInboundObserver.newSimpleConcurrentServerRequestObserver(
 			fakeOutboundObserver.asServerCallResponseObserver(),
 			maxConcurrentMessages,
 			messageHandler,
-			onErrorHandler,
-			(inboundControlObserver) -> {}
+			onErrorHandler
 		);
 	}
 }
