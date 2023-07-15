@@ -309,40 +309,23 @@ public abstract class ConcurrentInboundObserverTest {
 		final int[] handlerCallCounters = {0, 0};  // counters per inbound message
 		fakeOutboundObserver.outputBufferSize =
 				numberOfInboundMessages * numberOfResultsPerInboundMessage - 2;
-		fakeOutboundObserver.unreadyDurationMillis = 10L;
-		final var userExecutor = new LoggingExecutor("userExecutor", 5);
+		final int[] outboundCounters = {0, 0};  // counters per inbound message
 		final var testSubject = newConcurrentInboundObserver(
 			1,
-			(inboundMessage, individualObserver) -> {
-
-				individualObserver.setOnReadyHandler(() -> {
-					synchronized (individualObserver) {
-						handlerCallCounters[inboundMessage.id - 1]++;
-						if (log.isLoggable(Level.FINE)) {
-							log.fine("handler for message " + inboundMessage.id + " called "
-									+ handlerCallCounters[inboundMessage.id - 1] + " times");
-						}
-						individualObserver.notify();
-					}
-				});
-
-				userExecutor.execute(() -> {
-					for (int i = 0; i < numberOfResultsPerInboundMessage; i++) {
-						synchronized (individualObserver) {
-							while (
-								!individualObserver.isReady()
-								|| handlerCallCounters[inboundMessage.id - 1] == 0//wait for initial
-							) {
-								try {
-									individualObserver.wait();
-								} catch (InterruptedException ignored) {}
-							}
-						}
-						individualObserver.onNext(new OutboundMessage(inboundMessage.id));
-					}
+			(inboundMessage, individualObserver) -> individualObserver.setOnReadyHandler(() -> {
+				final var inboundIndex = inboundMessage.id - 1;
+				handlerCallCounters[inboundIndex]++;
+				while (
+					individualObserver.isReady()
+					&& outboundCounters[inboundIndex] < numberOfResultsPerInboundMessage
+				) {
+					outboundCounters[inboundIndex]++;
+					individualObserver.onNext(new OutboundMessage(inboundMessage.id));
+				}
+				if (outboundCounters[inboundIndex] >= numberOfResultsPerInboundMessage) {
 					individualObserver.onCompleted();
-				});
-			},
+				}
+			}),
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
@@ -351,13 +334,7 @@ public abstract class ConcurrentInboundObserverTest {
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			fakeOutboundObserver::awaitFinalization,
-			(timeoutMillis) -> {
-				grpcInternalExecutor.shutdown();
-				userExecutor.shutdown();
-				return true;
-			},
-			grpcInternalExecutor::awaitTermination,
-			userExecutor::awaitTermination
+			Awaitable.ofTermination(grpcInternalExecutor)
 		);
 
 		assertEquals("handler of the first observer should be called once",
@@ -369,7 +346,6 @@ public abstract class ConcurrentInboundObserverTest {
 			numberOfInboundMessages * numberOfResultsPerInboundMessage,
 			fakeOutboundObserver.getOutputData().size()
 		);
-		userExecutor.verify();
 		performStandardVerifications(fakeOutboundObserver);
 	}
 
