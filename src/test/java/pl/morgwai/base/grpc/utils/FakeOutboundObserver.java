@@ -25,7 +25,7 @@ import static org.junit.Assert.*;
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
  */
-public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserver<OutboundT> {
+public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamObserver<OutboundT> {
 
 
 
@@ -45,10 +45,10 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 	 * Ensures listener concurrency contract: user inbound observer may be called concurrently by at
 	 * most 1 thread
 	 */
-	final Object listenerLock = new Object();
+	private final Object listenerLock = new Object();
 
 	/** Verifies that at most 1 thread concurrently calls this observer's methods. */
-	final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
+	private final LoggingReentrantLock concurrencyGuard = new LoggingReentrantLock();
 
 
 
@@ -64,11 +64,6 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 
 
 	// output and readiness stuff
-
-	final List<OutboundT> outputData = new LinkedList<>();
-	int messagesAfterFinalizationCount = 0;
-	Runnable onReadyHandler;
-	volatile boolean ready = true;
 
 	/**
 	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
@@ -86,14 +81,17 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 		}
 		return outputData;
 	}
+	private final List<OutboundT> outputData = new LinkedList<>();
 
 	/**
 	 * Number of messages that were submitted to this observer after
 	 * {@link #isFinalized() finalization}.
 	 */
-	public int getMessagesAfterFinalizationCount() {
-		return messagesAfterFinalizationCount;
-	}
+	public int getMessagesAfterFinalizationCount() { return messagesAfterFinalizationCount; }
+	private int messagesAfterFinalizationCount = 0;
+
+	private Runnable onReadyHandler;
+	private volatile boolean ready = true;
 
 	@Override
 	public void onNext(OutboundT message) {
@@ -171,29 +169,35 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 
 	// finalization stuff
 
-	final CountDownLatch finalizationGuard = new CountDownLatch(1);
-	int extraFinalizationCount = 0;
-	boolean finalized;
-	Throwable reportedError;
-	String cancelMessage;
+	private final CountDownLatch finalizationGuard = new CountDownLatch(1);
 
 	/** Whether {@link #onCompleted()} or {@link #onError(Throwable)} was called. */
 	public boolean isFinalized() { return finalized; }
+	private boolean finalized;
 
 	/** Error reported via {@link #onError(Throwable)}. */
 	public Throwable getReportedError() { return reportedError; }
+	private Throwable reportedError;
 
 	/**
-	 * Message given by a client when
-	 * {@link ClientCallStreamObserver#cancel(String, Throwable) cancelling a call}.
+	 * Message reported via {@link ClientCallStreamObserver#cancel(String, Throwable)} called on
+	 * observer passed {@link #asClientOutboundObserver()}.
 	 */
 	public String getCancelMessage() { return cancelMessage; }
+	private String cancelMessage;
 
+	/**
+	 * Reason reported via {@link ClientCallStreamObserver#cancel(String, Throwable)} called on
+	 * observer passed {@link #asClientOutboundObserver()}.
+	 */
+	public Throwable getCancelReason() { return cancelReason; }
+	private Throwable cancelReason;
 	/**
 	 *  How many bogus additional calls to either {@link #onCompleted()} or
 	 *  {@link #onError(Throwable)} there were apart from the first expected one.
 	 */
 	public int getExtraFinalizationCount() { return extraFinalizationCount; }
+	private int extraFinalizationCount = 0;
 
 	@Override
 	public void onCompleted() {
@@ -221,9 +225,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 		onCompleted();
 	}
 
+	/** For {@link #asClientOutboundObserver()}. */
 	private void cancel(String message, Throwable reason) {
 		cancelMessage = message;
-		onError(reason);
+		cancelReason = reason;
+		onCompleted();
 	}
 
 	/**
@@ -250,11 +256,10 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 
 	// inbound message delivery stuff
 
-	volatile Consumer<StreamObserver<InboundT>> inboundMessageProducer;
-	StreamObserver<InboundT> inboundObserver;
-	int accumulatedMessageRequestCount = 0;
-	boolean autoRequest = true;
-	boolean inboundMessageDeliveryStarted;
+	private volatile Consumer<StreamObserver<InboundT>> inboundMessageProducer;
+	private StreamObserver<InboundT> inboundObserver;
+	private int accumulatedMessageRequestCount = 0;
+	private boolean autoRequest = true;
 
 	/**
 	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
@@ -283,7 +288,7 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 			() -> {
 				log.fine("calling beforeStart(...)");
 				inboundObserver.beforeStart(
-					FakeOutboundObserver.this.asClientCallControlObserver());
+					FakeOutboundObserver.this.asClientInboundControlObserver());
 			}
 		);
 	}
@@ -293,7 +298,6 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer,
 		Runnable callBeforeStart
 	) {
-		inboundMessageDeliveryStarted = true;
 		this.inboundMessageProducer = inboundMessageProducer;
 		this.inboundObserver = new StreamObserver<>() {
 
@@ -416,7 +420,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 
 	// interface leftovers
 
-	public void setCompression() {
+	@Override
+	public void setCompression(String compression) {
 		if ( !concurrencyGuard.tryLock("setCompression")) {
 			throw new AssertionError("concurrency violation");
 		}
@@ -431,99 +436,199 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 		concurrencyGuard.unlock();
 	}
 
+	@Override
+	public void setOnCloseHandler(Runnable onCloseHandler) {
+		if ( !concurrencyGuard.tryLock("setMessageCompression")) {
+			throw new AssertionError("concurrency violation");
+		}
+		try {
+			super.setOnCloseHandler(onCloseHandler);
+		} finally {
+			concurrencyGuard.unlock();
+		}
+	}
 
 
-	/** For {@link SimpleServerRequestObserverTests}. */
-	ServerCallStreamObserver<OutboundT> asServerCallResponseObserver() {
+
+	/** For {@link NestedClientResponseObserverTests}. */
+	ServerCallStreamObserver<OutboundT> asServerOutboundObserver() {
 		return new ServerCallStreamObserver<>() {
-			// ServerCallStreamObserver
-			@Override public boolean isCancelled() {return FakeOutboundObserver.this.isCancelled();}
-			@Override public void setOnCancelHandler(Runnable onCancelHandler) {
-				FakeOutboundObserver.this.setOnCancelHandler(onCancelHandler);
-			}
-			@Override public void setOnCloseHandler(Runnable onCloseHandler) {}
-			@Override public void disableAutoRequest() {
-				FakeOutboundObserver.this.disableAutoInboundFlowControl();
-			}
-			@Override public void setCompression(String compression) {
-				FakeOutboundObserver.this.setCompression();
-			}
-
-			// CallStreamObserver
-			@Override public void setMessageCompression(boolean enable) {
-				FakeOutboundObserver.this.setMessageCompression(enable);
-			}
-			@Override public void disableAutoInboundFlowControl() {
-				FakeOutboundObserver.this.disableAutoInboundFlowControl();
-			}
+			// enabled outbound
 			@Override public void setOnReadyHandler(Runnable onReadyHandler) {
 				FakeOutboundObserver.this.setOnReadyHandler(onReadyHandler);
 			}
-			@Override public boolean isReady() { return FakeOutboundObserver.this.isReady(); }
-			@Override public void request(int count) { FakeOutboundObserver.this.request(count); }
-			@Override public void onNext(OutboundT value) {FakeOutboundObserver.this.onNext(value);}
-			@Override public void onError(Throwable t) { FakeOutboundObserver.this.onError(t); }
-			@Override public void onCompleted() { FakeOutboundObserver.this.onCompleted(); }
+			@Override public boolean isReady() {
+				return FakeOutboundObserver.this.isReady();
+			}
+			@Override public void onNext(OutboundT value) {
+				FakeOutboundObserver.this.onNext(value);
+			}
+			@Override public void onError(Throwable t) {
+				FakeOutboundObserver.this.onError(t);
+			}
+			@Override public void onCompleted() {
+				FakeOutboundObserver.this.onCompleted();
+			}
+
+			// disabled inbound control
+			@Override public void request(int count) {
+				throw new IllegalArgumentException(
+						"attempted inbound control on outbound only ServerObserver");
+				}
+			@Override public void disableAutoInboundFlowControl() {
+				throw new IllegalArgumentException(
+						"attempted inbound control on outbound only ServerObserver");
+			}
+			@Override public void disableAutoRequest() {
+				throw new IllegalArgumentException(
+						"attempted inbound control on outbound only ServerObserver");
+			}
+
+			// leftovers
+			@Override public boolean isCancelled() {
+				return FakeOutboundObserver.this.isCancelled();
+			}
+			@Override public void setOnCancelHandler(Runnable onCancelHandler) {
+				FakeOutboundObserver.this.setOnCancelHandler(onCancelHandler);
+			}
+			@Override public void setOnCloseHandler(Runnable onCloseHandler) {
+				FakeOutboundObserver.this.setOnCloseHandler(onCloseHandler);
+			}
+			@Override public void setCompression(String compression) {
+				FakeOutboundObserver.this.setCompression(compression);
+			}
+			@Override public void setMessageCompression(boolean enable) {
+				FakeOutboundObserver.this.setMessageCompression(enable);
+			}
 		};
 	}
 
 	/** For {@link ServerRequestObserverTests}. */
-	ClientCallStreamObserver<OutboundT> asClientCallRequestObserver() {
-		return new ClientCallStreamObserver<>() {
-			// ClientCallStreamObserver
-			@Override public void cancel(@Nullable String message, @Nullable Throwable cause) {
-				FakeOutboundObserver.this.cancel(message, cause);
-			}
-			@Override public void disableAutoRequestWithInitial(int request) {
-				throw new IllegalArgumentException(
-					"attempted inbound control on outbound ClientCallRequestObserver");
-			}
-
-			// CallStreamObserver
-			@Override public void request(int count) {
-				throw new IllegalArgumentException(
-					"attempted inbound control on outbound ClientCallRequestObserver");
-			}
-			@Override public void setMessageCompression(boolean enable) {
-				FakeOutboundObserver.this.setMessageCompression(enable);
+	ServerCallStreamObserver<OutboundT> asServerInboundControlObserver() {
+		return new ServerCallStreamObserver<>() {
+			// enabled inbound control
+			@Override public void request(int count){
+				FakeOutboundObserver.this.request(count);
 			}
 			@Override public void disableAutoInboundFlowControl() {
 				FakeOutboundObserver.this.disableAutoInboundFlowControl();
 			}
+			@Override public void disableAutoRequest() {
+				FakeOutboundObserver.this.disableAutoRequest();
+			}
+
+			// disabled outbound
+			@Override public void setOnReadyHandler(Runnable onReadyHandler) {
+				throw new IllegalArgumentException(
+						"attempted output to inbound control only ServerObserver");
+			}
+			@Override public boolean isReady() {
+				throw new IllegalArgumentException(
+						"attempted output to inbound control only ServerObserver");
+			}
+			@Override public void onNext(OutboundT value) {
+				throw new IllegalArgumentException(
+						"attempted output to inbound control only ServerObserver");
+			}
+			@Override public void onError(Throwable t) {
+				throw new IllegalArgumentException(
+						"attempted output to inbound control only ServerObserver");
+			}
+			@Override public void onCompleted() {
+				throw new IllegalArgumentException(
+						"attempted output to inbound control only ServerObserver");
+			}
+
+			// leftovers
+			@Override public boolean isCancelled() {
+				return FakeOutboundObserver.this.isCancelled();
+			}
+			@Override public void setOnCancelHandler(Runnable onCancelHandler) {
+				FakeOutboundObserver.this.setOnCancelHandler(onCancelHandler);
+			}
+			@Override public void setOnCloseHandler(Runnable onCloseHandler) {
+				FakeOutboundObserver.this.setOnCloseHandler(onCloseHandler);
+			}
+			@Override public void setCompression(String compression) {
+				FakeOutboundObserver.this.setCompression(compression);
+			}
+			@Override public void setMessageCompression(boolean enable) {
+				FakeOutboundObserver.this.setMessageCompression(enable);
+			}
+		};
+	}
+
+	/** For {@link ServerRequestObserverTests} and {@link ChainedClientResponseObserverTests} */
+	ClientCallStreamObserver<OutboundT> asClientOutboundObserver() {
+		return new ClientCallStreamObserver<>() {
+			// cancel
+			@Override public void cancel(@Nullable String message, @Nullable Throwable cause) {
+				FakeOutboundObserver.this.cancel(message, cause);
+			}
+
+			// enabled outbound
 			@Override public void setOnReadyHandler(Runnable onReadyHandler) {
 				FakeOutboundObserver.this.setOnReadyHandler(onReadyHandler);
 			}
-			@Override public boolean isReady() { return FakeOutboundObserver.this.isReady(); }
-			@Override public void onNext(OutboundT value) {FakeOutboundObserver.this.onNext(value);}
-			@Override public void onError(Throwable t) { FakeOutboundObserver.this.onError(t); }
-			@Override public void onCompleted() { FakeOutboundObserver.this.onCompleted(); }
+			@Override public boolean isReady() {
+				return FakeOutboundObserver.this.isReady();
+			}
+			@Override public void onNext(OutboundT value) {
+				FakeOutboundObserver.this.onNext(value);
+			}
+			@Override public void onError(Throwable t) {
+				FakeOutboundObserver.this.onError(t);
+			}
+			@Override public void onCompleted() {
+				FakeOutboundObserver.this.onCompleted();
+			}
+
+			// disabled inbound control
+			@Override public void request(int count) {
+				throw new IllegalArgumentException(
+					"attempted inbound control on outbound ClientCallRequestObserver");
+			}
+			@Override public void disableAutoInboundFlowControl() {
+				throw new IllegalArgumentException(
+						"attempted inbound control on outbound ClientCallRequestObserver");
+			}
+			@Override public void disableAutoRequestWithInitial(int request) {
+				throw new IllegalArgumentException(
+						"attempted inbound control on outbound ClientCallRequestObserver");
+			}
+
+			// leftovers
+			@Override public void setMessageCompression(boolean enable) {
+				FakeOutboundObserver.this.setMessageCompression(enable);
+			}
 		};
 	}
 
 	/** For {@link #startClientMessageDelivery(ClientResponseObserver, Consumer)}. */
-	<ControlT> ClientCallStreamObserver<ControlT> asClientCallControlObserver() {
+	<ControlT> ClientCallStreamObserver<ControlT> asClientInboundControlObserver() {
 		return new ClientCallStreamObserver<>() {
-			// ClientCallStreamObserver
+			// cancel
 			@Override public void cancel(@Nullable String message, @Nullable Throwable cause) {
-				throw new IllegalArgumentException(
-					"attempted output to inbound control ClientCallRequestObserver");
-			}
-			@Override public void disableAutoRequestWithInitial(int request) {
-				disableAutoInboundFlowControl();
-				request(request);
+				grpcInternalExecutor.execute(() -> {
+					synchronized (listenerLock) {
+						inboundObserver.onError(Status.CANCELLED.asRuntimeException());
+					}
+				});
 			}
 
-			// CallStreamObserver
+			// enabled inbound control
 			@Override public void request(int count) {
 				FakeOutboundObserver.this.request(count);
 			}
 			@Override public void disableAutoInboundFlowControl() {
 				FakeOutboundObserver.this.disableAutoInboundFlowControl();
 			}
-			@Override public void setMessageCompression(boolean enable) {
-				throw new IllegalArgumentException(
-					"attempted output to inbound control ClientCallRequestObserver");
+			@Override public void disableAutoRequestWithInitial(int request) {
+				disableAutoInboundFlowControl();
+				request(request);
 			}
+
+			// disabled outbound
 			@Override public void setOnReadyHandler(Runnable onReadyHandler) {
 				throw new IllegalArgumentException(
 					"attempted output to inbound control ClientCallRequestObserver");
@@ -543,6 +648,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserve
 			@Override public void onCompleted() {
 				throw new IllegalArgumentException(
 					"attempted output to inbound control ClientCallRequestObserver");
+			}
+
+			// leftovers
+			@Override public void setMessageCompression(boolean enable) {
+				FakeOutboundObserver.this.setMessageCompression(enable);
 			}
 		};
 	}

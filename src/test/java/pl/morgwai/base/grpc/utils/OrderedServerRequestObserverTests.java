@@ -19,11 +19,11 @@ public class OrderedServerRequestObserverTests extends OrderedConcurrentInboundO
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentServerRequestObserver(
-			fakeOutboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,
-			fakeOutboundObserver.asServerCallResponseObserver()
+			fakeOutboundObserver.asServerInboundControlObserver()
 		);
 	}
 }

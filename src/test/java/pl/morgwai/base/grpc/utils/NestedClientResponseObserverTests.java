@@ -20,7 +20,7 @@ public class NestedClientResponseObserverTests extends ConcurrentInboundObserver
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
-			fakeOutboundObserver.asServerCallResponseObserver(),
+			fakeOutboundObserver.asServerOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

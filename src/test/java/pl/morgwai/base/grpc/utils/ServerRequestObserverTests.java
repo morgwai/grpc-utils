@@ -19,11 +19,11 @@ public class ServerRequestObserverTests extends ConcurrentInboundObserverTests {
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newConcurrentServerRequestObserver(
-			fakeOutboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,
-			fakeOutboundObserver.asServerCallResponseObserver()
+			fakeOutboundObserver.asServerInboundControlObserver()
 		);
 	}
 }

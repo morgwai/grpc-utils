@@ -19,7 +19,7 @@ public class ChainedClientResponseObserverTests extends ConcurrentInboundObserve
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
-			fakeOutboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

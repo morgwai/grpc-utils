@@ -20,7 +20,7 @@ public class OrderedNestedClientResponseObserverTests extends OrderedConcurrentI
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
-			fakeOutboundObserver.asServerCallResponseObserver(),
+			fakeOutboundObserver.asServerOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

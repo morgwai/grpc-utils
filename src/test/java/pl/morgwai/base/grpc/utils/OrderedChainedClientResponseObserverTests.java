@@ -20,7 +20,7 @@ public class OrderedChainedClientResponseObserverTests extends OrderedConcurrent
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
-			fakeOutboundObserver.asClientCallRequestObserver(),
+			fakeOutboundObserver.asClientOutboundObserver(),
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler,

@@ -278,7 +278,7 @@ public class DispatchingOnReadyHandlerTest {
 				messagesPerTasks * numberOfTasks, fakeOutboundObserver.getOutputData().size());
 		userExecutor.verify();
 		assertSame("exceptionToReport should be passed to onError",
-				exceptionToReport, fakeOutboundObserver.reportedError);
+				exceptionToReport, fakeOutboundObserver.getReportedError());
 		performStandardVerifications();
 	}
 
@@ -330,7 +330,7 @@ public class DispatchingOnReadyHandlerTest {
 				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
 				fakeOutboundObserver.getOutputData().size());
 		userExecutor.verify();
-		assertNull("no error should be reported", fakeOutboundObserver.reportedError);
+		assertNull("no error should be reported", fakeOutboundObserver.getReportedError());
 		performStandardVerifications();
 	}
 
@@ -392,7 +392,7 @@ public class DispatchingOnReadyHandlerTest {
 				fakeOutboundObserver.getOutputData().size());
 		userExecutor.verify();
 		assertSame("exceptionToReport should be passed to onError",
-				exceptionToReport, fakeOutboundObserver.reportedError);
+				exceptionToReport, fakeOutboundObserver.getReportedError());
 		performStandardVerifications();
 	}
 

@@ -19,7 +19,7 @@ public class SimpleServerRequestObserverTests extends ConcurrentInboundObserverT
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newSimpleConcurrentServerRequestObserver(
-			fakeOutboundObserver.asServerCallResponseObserver(),
+			fakeOutboundObserver,
 			maxConcurrentMessages,
 			messageHandler,
 			onErrorHandler
