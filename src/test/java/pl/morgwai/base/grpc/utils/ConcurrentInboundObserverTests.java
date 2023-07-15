@@ -141,6 +141,7 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 	void testSynchronousProcessing(int numberOfMessages) throws InterruptedException {
+		final int[] onHalfClosedHandlerCallCounterHolder = {0};
 		final var testSubject = newConcurrentInboundObserver(
 			1,
 			(inboundMessage, individualObserver) -> {
@@ -149,6 +150,7 @@ public abstract class ConcurrentInboundObserverTests {
 			},
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
+		testSubject.setOnHalfClosedHandler(() -> onHalfClosedHandlerCallCounterHolder[0]++);
 
 		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfMessages));
 		Awaitable.awaitMultiple(
@@ -165,6 +167,8 @@ public abstract class ConcurrentInboundObserverTests {
 				numberOfMessages, fakeOutboundObserver.getOutputData().size());
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
+		assertEquals("onHalfClosedHandler should be called once",
+				1, onHalfClosedHandlerCallCounterHolder[0]);
 		performStandardVerifications(fakeOutboundObserver);
 	}
 

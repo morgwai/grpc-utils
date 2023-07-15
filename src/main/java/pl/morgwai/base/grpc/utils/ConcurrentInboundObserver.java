@@ -36,7 +36,8 @@ import io.grpc.stub.*;
  * called automatically.</p>
  * <p>
  * If some additional action is required once the inbound stream is closed by the remote peer,
- * {@link #onHalfClosed()} method may be overridden.</p>
+ * {@link #onHalfClosed()} method may be overridden or its handler may be set using
+ * {@link #setOnHalfClosedHandler(Runnable)} method.</p>
  * <p>
  * If work is not dispatched to other threads, then processing of inbound messages will be
  * sequential and performed with respect to flow-control. {@code maxConcurrentMessages} constructor
@@ -521,10 +522,23 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Called at the beginning of {@link #onCompleted()}. Subclasses may override this method if
-	 * some additional action is required once the inbound stream is closed by the remote peer,
+	 * Called at the beginning of {@link #onCompleted()}. The default implementation calls
+	 * {@link #onHalfClosedHandler} if it is not {@code null}.
 	 */
-	protected void onHalfClosed() {}
+	protected void onHalfClosed() {
+		if (onHalfClosedHandler != null) onHalfClosedHandler.run();
+	}
+
+	/** Sets {@link #onHalfClosedHandler}. */
+	public void setOnHalfClosedHandler(Runnable onHalfClosedHandler) {
+		this.onHalfClosedHandler = onHalfClosedHandler;
+	}
+
+	/**
+	 * Called by the default implementation of {@link #onHalfClosed()} if not {@code null}. May be
+	 * set using {@link #setOnHalfClosedHandler(Runnable)}.
+	 */
+	protected Runnable onHalfClosedHandler;
 
 
 
