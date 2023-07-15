@@ -12,12 +12,12 @@ public class NestedClientResponseObserverTests extends ConcurrentInboundObserver
 
 
 	@Override
-	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
-				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
+				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return ConcurrentInboundObserver.newConcurrentClientResponseObserver(
 			fakeOutboundObserver.asServerCallResponseObserver(),
@@ -26,5 +26,12 @@ public class NestedClientResponseObserverTests extends ConcurrentInboundObserver
 			onErrorHandler,
 			(inboundControlObserver) -> {}
 		);
+	}
+
+
+
+	@Override
+	protected boolean isClientResponseObserverTest() {
+		return true;
 	}
 }

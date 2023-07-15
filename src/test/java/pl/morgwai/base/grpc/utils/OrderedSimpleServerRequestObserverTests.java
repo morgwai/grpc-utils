@@ -11,12 +11,12 @@ public class OrderedSimpleServerRequestObserverTests extends OrderedConcurrentIn
 
 
 
-	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
-				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
+				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newSimpleOrderedConcurrentServerRequestObserver(
 			fakeOutboundObserver.asServerCallResponseObserver(),

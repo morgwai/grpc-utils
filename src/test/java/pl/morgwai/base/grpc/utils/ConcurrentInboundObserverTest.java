@@ -11,8 +11,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.google.common.collect.Comparators;
-import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.StreamObserver;
+import io.grpc.stub.*;
 import org.junit.*;
 import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
@@ -31,7 +30,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
-	FakeOutboundObserver<OutboundMessage, Integer> fakeOutboundObserver;
+	FakeOutboundObserver<OutboundMessage> fakeOutboundObserver;
 	LoggingExecutor grpcInternalExecutor;
 	Throwable asyncError;
 
@@ -44,20 +43,25 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
-	/**
-	 * Creates test subject.
-	 */
-	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	/** Creates test subject. */
+	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
-				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
+				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	);
+
+	/** See {@link #startMessageDelivery(ConcurrentInboundObserver, InboundMessageProducer)}. */
+	protected boolean isClientResponseObserverTest() {
+		return false;
+	}
+
+
 
 	BiConsumer<
 			Throwable,
-			ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>>
+			ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>>
 	interruptThreadErrorHandler(Thread thread) {
 		return (error, thisObserver) -> thread.interrupt();
 	}
@@ -65,9 +69,11 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 	/**
-	 * Simulates client/previous chained call delivering inbound messages.
-	 * For use with {@link FakeOutboundObserver#startMessageDelivery(StreamObserver, Consumer)}.
+	 * Simulates client/previous chained call delivering inbound messages. For use with
+	 * {@link FakeOutboundObserver#startServerMessageDelivery(StreamObserver, Consumer)} or
+	 * {@link FakeOutboundObserver#startClientMessageDelivery(ClientResponseObserver, Consumer)}.
 	 * Instances created in test methods.
+	 * @see #startMessageDelivery(ConcurrentInboundObserver, InboundMessageProducer)
 	 */
 	static class InboundMessageProducer implements Consumer<StreamObserver<InboundMessage>> {
 
@@ -115,6 +121,25 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
+	/**
+	 * Calls either
+	 * {@link FakeOutboundObserver#startServerMessageDelivery(StreamObserver, Consumer)} or
+	 * {@link FakeOutboundObserver#startClientMessageDelivery(ClientResponseObserver, Consumer)}
+	 * depending on the result from {@link #isClientResponseObserverTest()}.
+	 */
+	void startMessageDelivery(
+		ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?> testSubject,
+		InboundMessageProducer inboundMessageProducer
+	) {
+		if (isClientResponseObserverTest()) {
+			fakeOutboundObserver.startClientMessageDelivery(testSubject, inboundMessageProducer);
+		} else {
+			fakeOutboundObserver.startServerMessageDelivery(testSubject, inboundMessageProducer);
+		}
+	}
+
+
+
 	void testSynchronousProcessing(int numberOfMessages) throws InterruptedException {
 		final var testSubject = newConcurrentInboundObserver(
 			1,
@@ -125,8 +150,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
-				testSubject, new InboundMessageProducer(numberOfMessages));
+		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfMessages));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			fakeOutboundObserver::awaitFinalization,
@@ -174,8 +198,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
-				testSubject, new InboundMessageProducer(numberOfInboundMessages));
+		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfInboundMessages));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			fakeOutboundObserver::awaitFinalization,
@@ -210,8 +233,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
-				testSubject, new InboundMessageProducer(numberOfInboundMessages));
+		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfInboundMessages));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			fakeOutboundObserver::awaitFinalization,
@@ -284,7 +306,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(testSubject, new InboundMessageProducer(1));
+		startMessageDelivery(testSubject, new InboundMessageProducer(1));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			(timeoutMillis) -> latch.await(timeoutMillis, TimeUnit.MILLISECONDS),
@@ -329,8 +351,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
-				testSubject, new InboundMessageProducer(numberOfInboundMessages));
+		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfInboundMessages));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
 			fakeOutboundObserver::awaitFinalization,
@@ -405,7 +426,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
+		startMessageDelivery(
 			testSubject,
 			new InboundMessageProducer(numberOfInboundMessages, maxInboundDeliveryDelayMillis)
 		);
@@ -479,7 +500,7 @@ public abstract class ConcurrentInboundObserverTest {
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
 
-		fakeOutboundObserver.startMessageDelivery(
+		startMessageDelivery(
 			testSubject,
 			new InboundMessageProducer(numberOfInboundMessages, maxInboundDeliveryDelayMillis)
 		);
@@ -506,7 +527,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
-	public static void performStandardVerifications(FakeOutboundObserver<?, ?> outboundObserver) {
+	public static void performStandardVerifications(FakeOutboundObserver<?> outboundObserver) {
 		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertEquals("no extra finalizations should occur",
 				0, outboundObserver.getExtraFinalizationCount());

@@ -12,12 +12,12 @@ public class OrderedChainedClientResponseObserverTests extends OrderedConcurrent
 
 
 
-	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, OutboundMessage>
+	@Override protected ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 	newConcurrentInboundObserver(
 		int maxConcurrentMessages,
 		BiConsumer<InboundMessage, SubstreamObserver<OutboundMessage>> messageHandler,
 		BiConsumer<Throwable, ConcurrentInboundObserver<
-				InboundMessage, OutboundMessage, OutboundMessage>> onErrorHandler
+				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	) {
 		return OrderedConcurrentInboundObserver.newOrderedConcurrentClientResponseObserver(
 			fakeOutboundObserver.asClientCallRequestObserver(),
@@ -26,5 +26,12 @@ public class OrderedChainedClientResponseObserverTests extends OrderedConcurrent
 			onErrorHandler,
 			(inboundControlObserver) -> {}
 		);
+	}
+
+
+
+	@Override
+	protected boolean isClientResponseObserverTest() {
+		return true;
 	}
 }

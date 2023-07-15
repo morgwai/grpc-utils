@@ -29,7 +29,7 @@ public class DispatchingOnReadyHandlerTest {
 	static final String LABEL = "testHandler";
 	DispatchingOnReadyHandler<Integer> testHandler;
 
-	FakeOutboundObserver<Integer, ?> fakeOutboundObserver;
+	FakeOutboundObserver<Integer> fakeOutboundObserver;
 
 	/**
 	 * Executor for gRPC internal tasks, such as delivering a next message, marking response

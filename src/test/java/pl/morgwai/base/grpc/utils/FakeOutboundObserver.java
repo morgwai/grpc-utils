@@ -25,8 +25,7 @@ import static org.junit.Assert.*;
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
  */
-public class FakeOutboundObserver<OutboundT, ControlT>
-		extends CallStreamObserver<OutboundT> {
+public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<OutboundT> {
 
 
 
@@ -259,15 +258,40 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 	/**
 	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
-	 * {@code inboundObserver} (test subject), delivers the initial call to {@link #onReadyHandler}
-	 * and to {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)} if
-	 * {@code inboundObserver} is a {@link ClientResponseObserver}.<br/>
+	 * {@code inboundObserver} (test subject), delivers the initial call to {@link #onReadyHandler}.
 	 * Next, delivers messages for all accumulated {@link #request(int)} calls that happened
 	 * before this method was called.
 	 */
-	<InboundT> void startMessageDelivery(
+	public <InboundT> void startServerMessageDelivery(
 		StreamObserver<InboundT> inboundObserver,
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer
+	) {
+		startMessageDelivery(inboundObserver, inboundMessageProducer, () -> {});
+	}
+
+	/**
+	 * Same as {@link #startServerMessageDelivery(StreamObserver, Consumer)} but also calls
+	 * {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)}.
+	 */
+	public <InboundT> void startClientMessageDelivery(
+		ClientResponseObserver<?, InboundT> inboundObserver,
+		Consumer<StreamObserver<InboundT>> inboundMessageProducer
+	) {
+		startMessageDelivery(
+			inboundObserver,
+			inboundMessageProducer,
+			() -> {
+				log.fine("calling beforeStart(...)");
+				inboundObserver.beforeStart(
+					FakeOutboundObserver.this.asClientCallControlObserver());
+			}
+		);
+	}
+
+	private <InboundT> void startMessageDelivery(
+		StreamObserver<InboundT> inboundObserver,
+		Consumer<StreamObserver<InboundT>> inboundMessageProducer,
+		Runnable callBeforeStart
 	) {
 		inboundMessageDeliveryStarted = true;
 		@SuppressWarnings("unchecked")
@@ -299,16 +323,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 
 			@Override public void run() {
 				synchronized (listenerLock) {
-
-					// beforeStart(...) TODO: this is a really ugly hack...
-					final var concurrentInboundObserver =
-							(ConcurrentInboundObserver<InboundT, OutboundT, ControlT>)
-									inboundObserver;
-					if (concurrentInboundObserver.onBeforeStartHandler != null) {
-						log.fine("calling beforeStart(...)");
-						concurrentInboundObserver.beforeStart(
-								FakeOutboundObserver.this.asClientCallControlObserver());
-					}
+					callBeforeStart.run();
 
 					// initial onReady()
 					if (onReadyHandler != null) {
@@ -487,8 +502,8 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 		};
 	}
 
-	/** For {@link #startMessageDelivery(StreamObserver, Consumer)}. */
-	ClientCallStreamObserver<ControlT> asClientCallControlObserver() {
+	/** For {@link #startClientMessageDelivery(ClientResponseObserver, Consumer)}. */
+	<ControlT> ClientCallStreamObserver<ControlT> asClientCallControlObserver() {
 		return new ClientCallStreamObserver<>() {
 			// ClientCallStreamObserver
 			@Override public void cancel(@Nullable String message, @Nullable Throwable cause) {
