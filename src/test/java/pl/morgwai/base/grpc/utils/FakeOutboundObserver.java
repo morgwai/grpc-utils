@@ -25,7 +25,7 @@ import static org.junit.Assert.*;
  * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
  * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
  */
-public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<OutboundT> {
+public class FakeOutboundObserver<InboundT, OutboundT> extends CallStreamObserver<OutboundT> {
 
 
 
@@ -250,8 +250,8 @@ public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<Outbound
 
 	// inbound message delivery stuff
 
-	volatile Consumer<StreamObserver<?>> inboundMessageProducer;
-	StreamObserver<?> inboundObserver;
+	volatile Consumer<StreamObserver<InboundT>> inboundMessageProducer;
+	StreamObserver<InboundT> inboundObserver;
 	int accumulatedMessageRequestCount = 0;
 	boolean autoRequest = true;
 	boolean inboundMessageDeliveryStarted;
@@ -262,7 +262,7 @@ public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<Outbound
 	 * Next, delivers messages for all accumulated {@link #request(int)} calls that happened
 	 * before this method was called.
 	 */
-	public <InboundT> void startServerMessageDelivery(
+	public void startServerMessageDelivery(
 		StreamObserver<InboundT> inboundObserver,
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer
 	) {
@@ -273,7 +273,7 @@ public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<Outbound
 	 * Same as {@link #startServerMessageDelivery(StreamObserver, Consumer)} but also calls
 	 * {@link ClientResponseObserver#beforeStart(ClientCallStreamObserver)}.
 	 */
-	public <InboundT> void startClientMessageDelivery(
+	public void startClientMessageDelivery(
 		ClientResponseObserver<?, InboundT> inboundObserver,
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer
 	) {
@@ -288,16 +288,14 @@ public class FakeOutboundObserver<OutboundT> extends CallStreamObserver<Outbound
 		);
 	}
 
-	private <InboundT> void startMessageDelivery(
+	private void startMessageDelivery(
 		StreamObserver<InboundT> inboundObserver,
 		Consumer<StreamObserver<InboundT>> inboundMessageProducer,
 		Runnable callBeforeStart
 	) {
 		inboundMessageDeliveryStarted = true;
-		@SuppressWarnings("unchecked")
-		final var tmp = (Consumer<StreamObserver<?>>)(Consumer<?>) inboundMessageProducer;
-		this.inboundMessageProducer = tmp;
-		this.inboundObserver = new StreamObserver<InboundT>() {
+		this.inboundMessageProducer = inboundMessageProducer;
+		this.inboundObserver = new StreamObserver<>() {
 
 			@Override public void onNext(InboundT message) {
 				synchronized(listenerLock) {

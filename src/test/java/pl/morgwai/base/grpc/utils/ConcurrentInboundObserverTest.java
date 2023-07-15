@@ -30,7 +30,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
-	FakeOutboundObserver<OutboundMessage> fakeOutboundObserver;
+	FakeOutboundObserver<InboundMessage, OutboundMessage> fakeOutboundObserver;
 	LoggingExecutor grpcInternalExecutor;
 	Throwable asyncError;
 
@@ -527,7 +527,7 @@ public abstract class ConcurrentInboundObserverTest {
 
 
 
-	public static void performStandardVerifications(FakeOutboundObserver<?> outboundObserver) {
+	public static void performStandardVerifications(FakeOutboundObserver<?, ?> outboundObserver) {
 		assertTrue("outbound stream should be marked as completed", outboundObserver.isFinalized());
 		assertEquals("no extra finalizations should occur",
 				0, outboundObserver.getExtraFinalizationCount());
