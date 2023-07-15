@@ -7,7 +7,7 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 
 
 
-public class OrderedServerRequestObserverTests extends OrderedConcurrentInboundObserverTest {
+public class OrderedServerRequestObserverTests extends OrderedConcurrentInboundObserverTests {
 
 
 

@@ -21,7 +21,7 @@ import static org.junit.Assert.*;
 
 
 
-public abstract class ConcurrentInboundObserverTest {
+public abstract class ConcurrentInboundObserverTests {
 
 
 
@@ -598,13 +598,13 @@ public abstract class ConcurrentInboundObserverTest {
 	 */
 	static Level LOG_LEVEL = Level.WARNING;
 
-	static final Logger log = Logger.getLogger(ConcurrentInboundObserverTest.class.getName());
+	static final Logger log = Logger.getLogger(ConcurrentInboundObserverTests.class.getName());
 
 	@BeforeClass
 	public static void setupLogging() {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
-					ConcurrentInboundObserverTest.class.getPackageName() + ".level"));
+					ConcurrentInboundObserverTests.class.getPackageName() + ".level"));
 		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		FakeOutboundObserver.getLogger().setLevel(LOG_LEVEL);

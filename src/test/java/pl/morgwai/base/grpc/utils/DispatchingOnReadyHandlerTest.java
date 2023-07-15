@@ -61,7 +61,7 @@ public class DispatchingOnReadyHandlerTest {
 
 	void performStandardVerifications() {
 		if (asyncAssertionError != null) throw asyncAssertionError;
-		ConcurrentInboundObserverTest.performStandardVerifications(fakeOutboundObserver);
+		ConcurrentInboundObserverTests.performStandardVerifications(fakeOutboundObserver);
 		assertTrue("label should be correctly passed",
 				testHandler.toString().contains(LABEL));
 	}

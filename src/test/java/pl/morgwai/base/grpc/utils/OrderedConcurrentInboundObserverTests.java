@@ -7,7 +7,7 @@ import com.google.common.collect.Comparators;
 
 
 
-public abstract class OrderedConcurrentInboundObserverTest extends ConcurrentInboundObserverTest {
+public abstract class OrderedConcurrentInboundObserverTests extends ConcurrentInboundObserverTests {
 
 
 

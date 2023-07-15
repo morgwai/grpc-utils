@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 
 
 
-public class GrpcAwaitableTest {
+public class GrpcAwaitableTests {
 	// This is almost exact double copy-paste of Awaitable.ofXXX test methods from java-utils.
 	// Unfortunately while Servers, Channels and Executor have methods related to shutting down
 	// with almost the same signatures, they don't share any interface.

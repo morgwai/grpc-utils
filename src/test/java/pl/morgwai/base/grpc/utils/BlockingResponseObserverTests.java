@@ -16,7 +16,7 @@ import static org.junit.Assert.*;
 
 
 
-public class BlockingResponseObserverTest extends EasyMockSupport {
+public class BlockingResponseObserverTests extends EasyMockSupport {
 
 
 
@@ -157,13 +157,13 @@ public class BlockingResponseObserverTest extends EasyMockSupport {
 	// FINER will log every message received
 	static Level LOG_LEVEL = Level.SEVERE;
 
-	static final Logger log = Logger.getLogger(BlockingResponseObserverTest.class.getName());
+	static final Logger log = Logger.getLogger(BlockingResponseObserverTests.class.getName());
 
 	@BeforeClass
 	public static void setupLogging() {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
-					BlockingResponseObserverTest.class.getPackageName() + ".level"));
+					BlockingResponseObserverTests.class.getPackageName() + ".level"));
 		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
