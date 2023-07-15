@@ -7,8 +7,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import io.grpc.stub.ClientCallStreamObserver;
-import org.easymock.EasyMockSupport;
-import org.easymock.Mock;
+import org.easymock.EasyMock;
 import org.junit.*;
 import pl.morgwai.base.grpc.utils.BlockingResponseObserver.ErrorReportedException;
 
@@ -16,24 +15,24 @@ import static org.junit.Assert.*;
 
 
 
-public class BlockingResponseObserverTests extends EasyMockSupport {
+public class BlockingResponseObserverTests {
 
 
 
 	BlockingResponseObserver<Integer, ResponseMessage> responseObserver;
 	List<ResponseMessage> receivedData;
-	@Mock ClientCallStreamObserver<Integer> requestObserver;
 
 
 
 	@Before
 	public void setup() {
 		receivedData = new LinkedList<>();
-		responseObserver = new BlockingResponseObserver<>((msg) -> {
-			if (log.isLoggable(Level.FINER)) log.finer("received " + msg);
-			receivedData.add(msg);
-		});
-		requestObserver = mock(ClientCallStreamObserver.class);
+		responseObserver = new BlockingResponseObserver<>(
+			(msg) -> {
+				if (log.isLoggable(Level.FINER)) log.finer("received " + msg);
+				receivedData.add(msg);
+			}
+		);
 	}
 
 
@@ -103,9 +102,9 @@ public class BlockingResponseObserverTests extends EasyMockSupport {
 		});
 		worker.start();
 		final var startMillis = System.currentTimeMillis();
-		final var awaitResult = responseObserver.toAwaitable().await(50L);
 
-		assertFalse("await result should indicate failure", awaitResult);
+		assertFalse("await result should indicate failure",
+				responseObserver.toAwaitable().await(50L));
 		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50L);
 		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
 		worker.join(10L);
@@ -130,14 +129,17 @@ public class BlockingResponseObserverTests extends EasyMockSupport {
 			(msg) -> {},
 			(observer) -> requestObserverHolder[0] = observer
 		);
-		replayAll();
+		final ClientCallStreamObserver<Integer> requestObserver =
+				EasyMock.createMock(ClientCallStreamObserver.class);
+		EasyMock.replay(requestObserver);
+
 		responseObserver.beforeStart(requestObserver);
 
 		assertSame("requestObserver should be passed to startHandler",
 				requestObserver, requestObserverHolder[0]);
 		assertSame("requestObserver should be available via getRequestObserver()",
 				requestObserver, responseObserver.getRequestObserver().get());
-		verifyAll();
+		EasyMock.verify(requestObserver);
 	}
 
 
@@ -168,5 +170,4 @@ public class BlockingResponseObserverTests extends EasyMockSupport {
 		log.setLevel(LOG_LEVEL);
 		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
 	}
-
 }
