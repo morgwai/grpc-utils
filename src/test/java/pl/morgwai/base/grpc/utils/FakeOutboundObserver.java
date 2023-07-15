@@ -77,10 +77,7 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 	 */
 	public volatile int outputBufferSize = 0;
 
-	/**
-	 * Duration for which observer will be unready. {@code 0} means "<i>schedule to mark as ready
-	 * after the next call to {@link #isReady()}</i>". By default 1ms.
-	 */
+	/** Duration for which observer will be unready. By default 1ms. */
 	public volatile long unreadyDurationMillis = 1L;
 
 	/** List of arguments of calls to {@link #onNext(Object)}. */
@@ -122,7 +119,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
 				ready = false;
 				log.fine("marked response observer unready");
-				if (unreadyDurationMillis <= 0) return;
 				grpcInternalExecutor.execute(new Runnable() {
 
 					@Override public void run() { markObserverReady(unreadyDurationMillis); }
@@ -154,14 +150,6 @@ public class FakeOutboundObserver<OutboundT, ControlT>
 			throw new AssertionError("concurrency violation");
 		}
 		try {
-			if ( !ready && unreadyDurationMillis <= 0) {
-				grpcInternalExecutor.execute(new Runnable() {
-
-					@Override public void run() { markObserverReady(0); }
-
-					@Override public String toString() { return "immediateReadyMarker"; }
-				});
-			}
 			return ready;
 		} finally {
 			concurrencyGuard.unlock();
