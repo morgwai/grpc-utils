@@ -122,28 +122,35 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			if (outputBufferSize > 0 && (outputData.size() % outputBufferSize == 0)) {
 				ready = false;
 				log.fine("marked response observer unready");
-				grpcInternalExecutor.execute(new Runnable() {
-
-					@Override public void run() { markObserverReady(unreadyDurationMillis); }
-
-					@Override public String toString() { return "readyMarker"; }
-				});
+				grpcInternalExecutor.execute(new ReadyMarker(unreadyDurationMillis));
 			}
 		} finally {
 			concurrencyGuard.unlock();
 		}
 	}
 
-	private void markObserverReady(long delayMillis) {
-		if (delayMillis > 0L) try {
-			Thread.sleep(delayMillis);
-		} catch (InterruptedException ignored) {}
-		synchronized (listenerLock) {
-			if ( !ready) {
-				log.fine("marking response observer ready again");
-				ready = true;
-				if (onReadyHandler != null) onReadyHandler.run();
+	/** sleep {@link #delayMillis}, mark observer ready, run onReadyHandler */
+	private class ReadyMarker implements Runnable {
+
+		final long delayMillis;
+
+		private ReadyMarker(long delayMillis) { this.delayMillis = delayMillis; }
+
+		@Override public void run() {
+			if (delayMillis > 0L) try {
+				Thread.sleep(delayMillis);
+			} catch (InterruptedException ignored) {}
+			synchronized (listenerLock) {
+				if ( !ready) {
+					log.fine("marking response observer ready again");
+					ready = true;
+					if (onReadyHandler != null) onReadyHandler.run();
+				}
 			}
+		}
+
+		@Override public String toString() {
+			return "ReadyMarker";
 		}
 	}
 
