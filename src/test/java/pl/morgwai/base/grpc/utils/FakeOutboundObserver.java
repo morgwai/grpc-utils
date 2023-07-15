@@ -63,7 +63,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
+	/////////////////////////////
 	// output and readiness stuff
+	/////////////////////////////
+
+
 
 	/**
 	 * Response observer becomes unready after each <code>outputBufferSize</code> messages are
@@ -92,6 +96,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 	private Runnable onReadyHandler;
 	private volatile boolean ready = true;
+
+
 
 	@Override
 	public void onNext(OutboundT message) {
@@ -141,6 +147,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		}
 	}
 
+
+
 	@Override
 	public boolean isReady() {
 		if ( !concurrencyGuard.tryLock("isReady")) {
@@ -152,6 +160,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			concurrencyGuard.unlock();
 		}
 	}
+
+
 
 	@Override
 	public void setOnReadyHandler(Runnable onReadyHandler) {
@@ -167,7 +177,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
+	/////////////////////
 	// finalization stuff
+	/////////////////////
+
+
 
 	private final CountDownLatch finalizationGuard = new CountDownLatch(1);
 
@@ -199,6 +213,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 	public int getExtraFinalizationCount() { return extraFinalizationCount; }
 	private int extraFinalizationCount = 0;
 
+
+
 	@Override
 	public void onCompleted() {
 		if ( !concurrencyGuard.tryLock("onCompleted")) {
@@ -219,18 +235,24 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		}
 	}
 
+
+
 	@Override
 	public void onError(Throwable t) {
 		reportedError = t;
 		onCompleted();
 	}
 
-	/** For {@link #asClientOutboundObserver()}. */
+
+
+	/** For {@link #asClientOutboundObserver()} perspective. */
 	private void cancel(String message, Throwable reason) {
 		cancelMessage = message;
 		cancelReason = reason;
 		onCompleted();
 	}
+
+
 
 	/**
 	 * Awaits until finalization (call to either {@link #onCompleted()} or
@@ -243,6 +265,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		return awaitFinalization(timeoutMillis, TimeUnit.MILLISECONDS);
 	}
 
+
+
 	public boolean awaitFinalization(long timeout, TimeUnit unit) throws InterruptedException {
 		finalizationGuard.await(timeout, unit);
 		synchronized (finalizationGuard) {
@@ -253,13 +277,18 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
-
+	/////////////////////////////////
 	// inbound message delivery stuff
+	/////////////////////////////////
+
+
 
 	private volatile Consumer<StreamObserver<InboundT>> inboundMessageProducer;
 	private StreamObserver<InboundT> inboundObserver;
 	private int accumulatedMessageRequestCount = 0;
 	private boolean autoRequest = true;
+
+
 
 	/**
 	 * Sets up delivery of inbound messages from {@code inboundMessageProducer} to
@@ -344,6 +373,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		});
 	}
 
+
+
 	@Override
 	public void disableAutoInboundFlowControl() {
 		if ( !concurrencyGuard.tryLock("disableAutoRequest")) {
@@ -355,6 +386,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			concurrencyGuard.unlock();
 		}
 	}
+
+
 
 	@Override
 	public void request(int count) {
@@ -386,10 +419,21 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
+	///////////////////
 	// cancelling stuff
+	///////////////////
 
-	volatile boolean cancelled = false;
-	Runnable onCancelHandler;
+
+
+
+	public boolean isCancelled() {
+		return cancelled;
+	}
+	private volatile boolean cancelled = false;
+
+	private Runnable onCancelHandler;
+
+
 
 	/**
 	 * Simulates canceling the call by the client side.
@@ -401,10 +445,9 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		}
 	}
 
-	public boolean isCancelled() {
-		return cancelled;
-	}
 
+
+	@Override
 	public void setOnCancelHandler(Runnable onCancelHandler) {
 		if ( !concurrencyGuard.tryLock("setOnCancelHandler")) {
 			throw new AssertionError("concurrency violation");
@@ -418,7 +461,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
+	//////////////////////
 	// interface leftovers
+	//////////////////////
+
+
 
 	@Override
 	public void setCompression(String compression) {
@@ -428,6 +475,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		concurrencyGuard.unlock();
 	}
 
+
+
 	@Override
 	public void setMessageCompression(boolean enable) {
 		if ( !concurrencyGuard.tryLock("setMessageCompression")) {
@@ -435,6 +484,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		}
 		concurrencyGuard.unlock();
 	}
+
+
 
 	@Override
 	public void setOnCloseHandler(Runnable onCloseHandler) {
@@ -447,6 +498,12 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			concurrencyGuard.unlock();
 		}
 	}
+
+
+
+	//////////////////////////////////////////
+	// perspectives for various types of tests
+	//////////////////////////////////////////
 
 
 
@@ -503,6 +560,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		};
 	}
 
+
+
 	/** For {@link ServerRequestObserverTests}. */
 	ServerCallStreamObserver<OutboundT> asServerInboundControlObserver() {
 		return new ServerCallStreamObserver<>() {
@@ -558,6 +617,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 		};
 	}
 
+
+
 	/** For {@link ServerRequestObserverTests} and {@link ChainedClientResponseObserverTests} */
 	ClientCallStreamObserver<OutboundT> asClientOutboundObserver() {
 		return new ClientCallStreamObserver<>() {
@@ -603,6 +664,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			}
 		};
 	}
+
+
 
 	/** For {@link #startClientMessageDelivery(ClientResponseObserver, Consumer)}. */
 	<ControlT> ClientCallStreamObserver<ControlT> asClientInboundControlObserver() {
@@ -656,6 +719,12 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			}
 		};
 	}
+
+
+
+	/////////////////////////////
+	// nested test helper classes
+	/////////////////////////////
 
 
 
@@ -798,6 +867,12 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 			super.unlock();
 		}
 	}
+
+
+
+	///////////////////
+	// logging settings
+	///////////////////
 
 
 
