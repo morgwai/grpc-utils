@@ -22,9 +22,9 @@ import io.grpc.stub.*;
  * Handles all the synchronization and manual flow-control to maintain the number of messages
  * processed concurrently configured with {@code maxConcurrentMessages} constructor param.
  * <p>
- * Each inbound message is assigned an individual observer of outbound messages substream resulting
- * from its processing. Inbound messages together with their individual results observers are
- * passed as arguments to
+ * Each inbound message is assigned an individual {@link OutboundSubstreamObserver observer of the
+ * substream of outbound messages} resulting from processing of this inbound message. Inbound
+ * messages together with their individual results observers are passed as arguments to
  * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
  * onInboundMessage(message, individualObserver)} method that must either be overridden in a
  * subclass or its handler must supplied on {@code onInboundMessageHandler} constructor param.</p>
@@ -140,7 +140,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	}
 
 	/**
-	 * Creates a server method request observer for gRPC methods that may issue some nested call(s).
+	 * Creates a server method request observer for gRPC methods that may issue some nested calls.
 	 * Configures flow-control and initializes handlers {@link #onInboundMessageHandler} and
 	 * {@link #onErrorHandler}.
 	 * <p>
@@ -457,8 +457,9 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Called by {@link #beforeStart(ClientCallStreamObserver) beforeStart(inboundControlObserver)},
 	 * the default implementation calls {@link #onBeforeStartHandler} if it is not {@code null}.
-	 * This method is meaningful only in case of client response observers, it is never called in
-	 * case of server request observers.
+	 * This method is meaningful only in client response observers in which case it is called by
+	 * {@link #beforeStart(ClientCallStreamObserver)} method. It is never called in case of server
+	 * request observers.
 	 * @see ClientResponseObserver#beforeStart(ClientCallStreamObserver)
 	 */
 	protected void onBeforeStart(ClientCallStreamObserver<ControlT> inboundControlObserver) {
@@ -485,10 +486,11 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@code errorToReport} will be discarded.</p>
 	 * <p>
 	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
-	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed.<br/>
+	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed
+	 * (half-close).<br/>
 	 * If it's called in
 	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)}, it should be followed by
+	 * onInboundMessage(...)}, it should be eventually followed by
 	 * {@link OutboundSubstreamObserver#onCompleted() individualObserver.onCompleted()}.</p>
 	 */
 	public final void reportErrorAfterAllTasksComplete(Throwable errorToReport) {
@@ -691,7 +693,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * A thread-safe observer of a substream of the parent outbound stream. The parent
 	 * {@code outboundObserver} will be marked as completed automatically when and only if all its
-	 * substreams are marked as completed.
+	 * substreams and the inbound stream are marked as completed.
 	 * @see #newOutboundSubstream()
 	 */
 	public class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
@@ -748,9 +750,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/**
-		 * Forwards {@code message} to the parent {@code outboundObserver}.
-		 */
+		/** Forwards {@code message} to the parent {@code outboundObserver}. */
 		@Override
 		public void onNext(OutboundT message) {
 			synchronized (lock) {
@@ -763,9 +763,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/**
-		 * Forwards {@code error} to the parent {@code outboundObserver}.
-		 */
+		/** Forwards {@code error} to the parent {@code outboundObserver}. */
 		@Override
 		public void onError(Throwable error) {
 			synchronized (lock) {
@@ -822,23 +820,17 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/**
-		 * Throws {@link UnsupportedOperationException}.
-		 */
+		/** Throws {@link UnsupportedOperationException}. */
 		@Override public void disableAutoInboundFlowControl() {
 			throw new UnsupportedOperationException();
 		}
 
-		/**
-		 * Throws {@link UnsupportedOperationException}.
-		 */
+		/** Throws {@link UnsupportedOperationException}. */
 		@Override public void request(int count) {
 			throw new UnsupportedOperationException();
 		}
 
-		/**
-		 * Throws {@link UnsupportedOperationException}.
-		 */
+		/** Throws {@link UnsupportedOperationException}. */
 		@Override public void setMessageCompression(boolean enable) {
 			throw new UnsupportedOperationException();
 		}
