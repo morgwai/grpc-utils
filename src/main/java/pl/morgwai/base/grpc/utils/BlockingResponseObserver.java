@@ -36,9 +36,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 
-	/**
-	 * Initializes {@link #responseHandler}.
-	 */
+	/** Initializes {@link #responseHandler}. */
 	public BlockingResponseObserver(Consumer<? super ResponseT> responseHandler) {
 		this(responseHandler, null);
 	}
@@ -65,7 +63,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	/**
 	 * Awaits up to {@code timeout} of {@code unit} for {@link #onCompleted()} or
 	 * {@link #onError(Throwable)} to be called.
-	 * @return {@code true} if {@link #onCompleted()} was called, {@code false} if timeout passed
+	 * @return {@code true} if {@link #onCompleted()} or {@link #onError(Throwable)} was called,
+	 * {@code false} if {@code timeout} passed.
 	 * @throws ErrorReportedException if {@link #onError(Throwable)} was called.
 	 *     {@link ErrorReportedException#getCause() getCause()} will return the throwable passed as
 	 *     the argument.
@@ -97,7 +96,9 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 	}
 
 	/**
-	 * Returns {@link Awaitable} of {@link #awaitCompletion(long, TimeUnit)}.
+	 * Returns {@link Awaitable} of {@link #awaitCompletion(long, TimeUnit)}. If
+	 * {@link ErrorReportedException} is thrown while awaiting, it is caught and {@code true} is
+	 * returned. The reported error can be then retrieved using {@link #getError()}.
 	 */
 	public Awaitable.WithUnit toAwaitable() {
 		return (timeout, unit) -> {
@@ -127,9 +128,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 
-	/**
-	 * The default implementation calls {@link #responseHandler}.
-	 */
+	/** The default implementation calls {@link #responseHandler}. */
 	@Override
 	public void onNext(ResponseT response) {
 		responseHandler.accept(response);
@@ -177,9 +176,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 
-	/**
-	 * Notifies threads awaiting for completion via {@link #awaitCompletion(long)}.
-	 */
+	/** Notifies threads awaiting for completion via {@link #awaitCompletion(long)}. */
 	@Override
 	public void onCompleted() {
 		completed = true;
@@ -189,7 +186,7 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 
 	/**
-	 * Causes {@link #awaitCompletion(long)} to throw an
+	 * Stores {@code error} and causes {@link #awaitCompletion(long, TimeUnit)} to throw an
 	 * {@link ErrorReportedException ErrorReportedException}.
 	 */
 	@Override
@@ -202,8 +199,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 
 	/**
 	 * Thrown by {@link BlockingResponseObserver#awaitCompletion(long)} if
-	 * {@link #onError(Throwable)} was called. {@link ErrorReportedException#getCause()} will
-	 * return the exception that was passed as an argument to {@link #onError(Throwable)}.
+	 * {@link #onError(Throwable)} was called. {@link ErrorReportedException#getCause()} returns
+	 * the exception that was passed as an argument to {@link #onError(Throwable)}.
 	 */
 	public static class ErrorReportedException extends Exception {
 		ErrorReportedException(Throwable reportedError) { super(reportedError); }
