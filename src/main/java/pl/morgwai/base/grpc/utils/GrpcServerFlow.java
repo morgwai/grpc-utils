@@ -12,9 +12,9 @@ import io.grpc.stub.*;
  * <p>
  * In a stub code generated from a proto file in {@link BindableService#bindService()} method, a
  * {@link ServerCallHandler} for each method is created: depending on <b>client</b> type either
- * {@link ServerCalls.StreamingServerCallHandler} or {@link ServerCalls.UnaryServerCallHandler}
- * (ie: <code>Streaming</code> / <code>Unary</code> prefix refers to client's type
- * (<code>Server</code> refers to <code>Call</code>), naming scheme here is not intuitive...).<br/>
+ * {@link ServerCalls.StreamingServerCallHandler} or {@link ServerCalls.UnaryServerCallHandler},
+ * ie: <code>Streaming</code> / <code>Unary</code> prefix refers to client's type
+ * (<code>Server</code> refers to <code>Call</code>).<br/>
  * When a call is received {@link ServerCallHandler#startCall(ServerCall, Metadata)} is called in
  * the interceptor chain, which returns a {@link ServerCall.Listener} specific for the client
  * type.</p>
