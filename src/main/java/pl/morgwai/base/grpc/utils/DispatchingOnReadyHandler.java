@@ -189,8 +189,10 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * Produced messages will be streamed concurrently from all the tasks to
 	 * {@code outboundObserver} with respect to flow-control: if {@code outboundObserver} becomes
 	 * unready, all the tasks will exit and will be redispatched after {@code outboundObserver}
-	 * becomes ready again. Redispatching of a given task will continue until the task is completed.
-	 * </p>
+	 * becomes ready again. Redispatching of a given task will continue until the task is marked as
+	 * completed. After all the tasks are completed
+	 * {@link CallStreamObserver#onCompleted() outboundObserver.onCompleted()} is called
+	 * automatically.</p>
 	 * <p>
 	 * A task will be marked as completed if
 	 * {@link #producerHasNextIndicator producerHasNextIndicator.apply(taskNumber)} returns
@@ -332,8 +334,8 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * with {@link #produceNextMessage(int) produceNextMessage(taskNumber)} and sending them to
 	 * {@code outboundObserver} as long as it is ready and the given task is not completed.
 	 * When {@code outboundObserver} becomes unready, the tasks exit and are redispatched during
-	 * the next call to this method. Redispatching will continue until tasks are marked as
-	 * completed.
+	 * the next call to this method when {@code outboundObserver} becomes ready again. Redispatching
+	 * continues until a task is marked as completed.
 	 */
 	@Override
 	public void run() {
