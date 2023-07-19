@@ -634,17 +634,19 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * the counter to {@code 0}.
 	 */
 	final void onReady() {
-		for (var substreamObserver: activeOutboundSubstreams) {
-			// a new request can't arrive now thanks to Listener's concurrency contract
-			substreamObserver.onReady();
-		}
 		synchronized (lock) {
 			if (idleCount > 0 && !halfClosed) {
 				inboundControlObserver.request(idleCount);
 				idleCount = 0;
 			}
+			// TODO: add routines for checking processing resources availability
 		}
-		// TODO: add routines for checking processing resources availability
+		for (var substreamObserver: activeOutboundSubstreams) {
+			// a new inbound can't arrive now due to Listener's concurrency contract and
+			// activeOutboundSubstreams is a concurrent Set, so removals in substream.onCompleted()
+			// are not a problem (some completed substreams may receive onReady() though)
+			substreamObserver.onReady();
+		}
 	}
 
 
