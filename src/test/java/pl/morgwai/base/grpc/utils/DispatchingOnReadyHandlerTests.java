@@ -19,7 +19,7 @@ import static org.junit.Assert.*;
 
 
 
-public class DispatchingOnReadyHandlerTest {
+public class DispatchingOnReadyHandlerTests {
 
 
 
@@ -413,7 +413,7 @@ public class DispatchingOnReadyHandlerTest {
 	public static void setupLogging() {
 		try {
 			LOG_LEVEL = Level.parse(System.getProperty(
-					DispatchingOnReadyHandlerTest.class.getPackageName() + ".level"));
+					DispatchingOnReadyHandlerTests.class.getPackageName() + ".level"));
 		} catch (Exception ignored) {}
 		log.setLevel(LOG_LEVEL);
 		FakeOutboundObserver.getLogger().setLevel(LOG_LEVEL);
