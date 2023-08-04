@@ -13,7 +13,7 @@ import io.grpc.Status.Code;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ChannelzService;
 import io.grpc.stub.*;
-import pl.morgwai.base.util.concurrent.Awaitable;
+import pl.morgwai.base.utils.concurrent.Awaitable;
 import pl.morgwai.base.grpc.utils.*;
 import pl.morgwai.samples.grpc.utils.BackendGrpc.BackendStub;
 import pl.morgwai.samples.grpc.utils.FrontendGrpc.FrontendImplBase;

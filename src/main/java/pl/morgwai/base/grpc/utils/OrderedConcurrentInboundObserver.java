@@ -6,8 +6,8 @@ import java.util.function.Consumer;
 
 import io.grpc.stub.*;
 
-import pl.morgwai.base.util.concurrent.OrderedConcurrentOutputBuffer;
-import pl.morgwai.base.util.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
+import pl.morgwai.base.utils.concurrent.OrderedConcurrentOutputBuffer;
+import pl.morgwai.base.utils.concurrent.OrderedConcurrentOutputBuffer.OutputStream;
 
 
 

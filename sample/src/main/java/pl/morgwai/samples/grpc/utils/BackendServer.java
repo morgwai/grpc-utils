@@ -11,7 +11,7 @@ import io.grpc.*;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ChannelzService;
 import io.grpc.stub.*;
-import pl.morgwai.base.util.concurrent.Awaitable;
+import pl.morgwai.base.utils.concurrent.Awaitable;
 import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver;
 import pl.morgwai.base.grpc.utils.GrpcAwaitable;
 import pl.morgwai.samples.grpc.utils.BackendGrpc.BackendImplBase;

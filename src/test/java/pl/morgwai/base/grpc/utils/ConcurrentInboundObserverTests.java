@@ -15,7 +15,7 @@ import io.grpc.stub.*;
 import org.junit.*;
 import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
-import pl.morgwai.base.util.concurrent.Awaitable;
+import pl.morgwai.base.utils.concurrent.Awaitable;
 
 import static org.junit.Assert.*;
 
