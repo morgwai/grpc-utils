@@ -13,6 +13,8 @@ import javax.annotation.Nullable;
 
 import io.grpc.Status;
 import io.grpc.stub.*;
+import pl.morgwai.base.utils.concurrent.NamingThreadFactory;
+import pl.morgwai.base.utils.concurrent.TaskTrackingThreadPoolExecutor;
 
 import static org.junit.Assert.*;
 
@@ -736,7 +738,7 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 	/** Logs task scheduling and executions, scheduling rejections and uncaught exceptions. */
-	public static class LoggingExecutor extends ThreadPoolExecutor {
+	public static class LoggingExecutor extends TaskTrackingThreadPoolExecutor {
 
 		/**
 		 * List of all rejected tasks.
@@ -756,7 +758,8 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 		public LoggingExecutor(String name, int poolSize) {
-			super(poolSize, poolSize, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+			super(poolSize, poolSize, 0L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
+					new NamingThreadFactory(name));
 			this.name = name;
 			setRejectedExecutionHandler((task, executor) -> {
 				log.log(Level.SEVERE, name + " rejected " + task, new Exception());
@@ -807,12 +810,10 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 		@Override
-		public List<Runnable> shutdownNow() {
+		public ForcedTerminationAftermath tryForceTerminate() {
 			log.severe(name + " shutting down forcibly");
-			return super.shutdownNow();
+			return super.tryForceTerminate();
 		}
-
-
 
 		public boolean awaitTermination(long timeoutMillis) throws InterruptedException {
 			return super.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
@@ -830,14 +831,13 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 						getUncaughtTaskExceptions().containsKey(exception));
 			}
 			if (isTerminated()) return;
-			final int activeCount = getActiveCount();
-			final var unstartedTasks = shutdownNow();
-			if (unstartedTasks.size() == 0 && activeCount == 0) {
-				log.warning(getName() + " not terminated, but no remaining tasks :?");
-				return;
+			final var aftermath = tryForceTerminate();
+			for (var stuckTask: aftermath.runningTasks) {
+				log.severe(getName() + ": stuck " + stuckTask);
 			}
-			log.severe(getName() + " has " + activeCount + " active tasks remaining");
-			for (var task: unstartedTasks) log.severe(getName() + " unstarted " + task);
+			for (var unexecutedTask: aftermath.unexecutedTasks) {
+				log.severe(getName() + ": unexecuted " + unexecutedTask);
+			}
 			fail(getName() + " should shutdown cleanly");
 		}
 	}
