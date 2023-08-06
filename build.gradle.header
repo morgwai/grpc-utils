@@ -21,3 +21,9 @@ publishing {
 		}
 	}
 }
+
+test {
+	useJUnit {
+		excludeCategories 'pl.morgwai.base.grpc.utils.SlowTests'
+	}
+}

@@ -12,6 +12,7 @@ import java.util.logging.Logger;
 import io.grpc.*;
 import org.junit.*;
 
+import org.junit.experimental.categories.Category;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.utils.concurrent.Awaitable;
 
@@ -23,8 +24,11 @@ public class DispatchingOnReadyHandlerTests {
 
 
 
-	/** Timeout for single-threaded, no-processing-delay operations. */
+	/** Timeout for standard tests. */
 	public static final long TIMEOUT_MILLIS = 500L;
+
+	/** Timeout for slow tests. */
+	public static final long SLOW_TIMEOUT_MILLIS = 10_000L;
 
 	static final String LABEL = "testHandler";
 	DispatchingOnReadyHandler<Integer> testHandler;
@@ -54,7 +58,7 @@ public class DispatchingOnReadyHandlerTests {
 		asyncAssertionError = null;
 		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 5);
 		fakeOutboundObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
-		userExecutor = new LoggingExecutor("userExecutor", 5);
+		userExecutor = new LoggingExecutor("userExecutor", 10);
 	}
 
 
@@ -68,10 +72,33 @@ public class DispatchingOnReadyHandlerTests {
 
 
 
+	@Test
+	public void testSingleThreadBufferOftenUnreadyFor3ms() throws InterruptedException {
+		testSingleThread(100, 5, 3L, TIMEOUT_MILLIS);
+	}
+
+	@Test
+	public void testSingleThreadBufferVeryOftenUnreadyFor0ms() throws InterruptedException {
+		testSingleThread(2000, 1, 0L, TIMEOUT_MILLIS);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testSingleThreadBufferOftenUnreadyFor3ms5kMsgs() throws InterruptedException {
+		testSingleThread(5000, 5, 3L, SLOW_TIMEOUT_MILLIS);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testSingleThreadBufferVeryOftenUnreadyFor0ms200kMsgs() throws InterruptedException {
+		testSingleThread(200_000, 1, 0L, SLOW_TIMEOUT_MILLIS);
+	}
+
 	public void testSingleThread(
 		int numberOfMessages,
 		int outputBufferSize,
-		long unreadyDurationMillis
+		long unreadyDurationMillis,
+		long timeoutMillis
 	) throws InterruptedException {
 		fakeOutboundObserver.outputBufferSize = outputBufferSize;
 		fakeOutboundObserver.unreadyDurationMillis = unreadyDurationMillis;
@@ -91,9 +118,9 @@ public class DispatchingOnReadyHandlerTests {
 
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
-			TIMEOUT_MILLIS,
+			timeoutMillis,
 			fakeOutboundObserver::awaitFinalization,
-			(timeoutMillis) -> {
+			(localTimeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;
@@ -110,25 +137,104 @@ public class DispatchingOnReadyHandlerTests {
 		performStandardVerifications();
 	}
 
+
+
 	@Test
-	public void testSingleThreadObserverSometimesUnreadyForFewMs() throws InterruptedException {
-		testSingleThread(100, 5, 3L);
+	public void testMultiThreadBufferOftenUnreadyFor3ms()
+		throws InterruptedException {
+		testMultiThread(
+			10, 5,
+			4, 3L,
+			TIMEOUT_MILLIS
+		);
 	}
 
 	@Test
-	public void testSingleThreadObserverOftenUnreadyForSplitMs() throws InterruptedException {
-		testSingleThread(2000, 1, 0L);
+	@Category(SlowTests.class)
+	public void testMultiThreadBufferOftenUnreadyFor3ms500msgsPerTask()
+		throws InterruptedException {
+		testMultiThread(
+			10, 500,
+			4, 3L,
+			SLOW_TIMEOUT_MILLIS
+		);
 	}
 
-
+	@Test
+	public void testMultiThreadBufferVeryOftenUnreadyFor0ms()
+		throws InterruptedException {
+		testMultiThread(
+			10, 5,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+	}
 
 	@Test
-	public void testMultiThread() throws InterruptedException {
-		final var messagesPerTasks = 5;
-		final var numberOfTasks = 5;
+	@Category(SlowTests.class)
+	public void testMultiThreadBufferVeryOftenUnreadyFor0ms10kMsgsPerTask()
+		throws InterruptedException {
+		testMultiThread(
+			10, 10_000,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testMultiThreadBufferSometimesUnreadyFor15ms()
+		throws InterruptedException {
+		testMultiThread(
+			10, 10,
+			17, 15L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testMultiThreadBufferSometimesUnreadyFor15ms500msgsPerTask()
+		throws InterruptedException {
+		testMultiThread(
+			10, 500,
+			17, 15L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testMultiThreadBufferVeryOftenUnreadyFor0msTooFewThreads()
+		throws InterruptedException {
+		testMultiThread(
+			20, 5,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testMultiThreadBufferVeryOftenUnreadyFor0msTooFewThreads10kMsgsPerTask()
+		throws InterruptedException {
+		testMultiThread(
+			20, 10_000,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	public void testMultiThread(
+		int numberOfTasks,
+		int messagesPerTasks,
+
+		int outputBufferSize,
+		long unreadyDurationMillis,
+
+		long timeoutMillis
+	) throws InterruptedException {
 		producedMessageCounters = new int[numberOfTasks];
-		fakeOutboundObserver.outputBufferSize = 3;
-		fakeOutboundObserver.unreadyDurationMillis = 5L;
+		fakeOutboundObserver.outputBufferSize = outputBufferSize;
+		fakeOutboundObserver.unreadyDurationMillis = unreadyDurationMillis;
 		testHandler = DispatchingOnReadyHandler.copyWithFlowControl(
 			fakeOutboundObserver,
 			userExecutor,
@@ -146,9 +252,9 @@ public class DispatchingOnReadyHandlerTests {
 
 		fakeOutboundObserver.runWithinListenerLock(testHandler);
 		Awaitable.awaitMultiple(
-			TIMEOUT_MILLIS,
+			timeoutMillis,
 			fakeOutboundObserver::awaitFinalization,
-			(timeoutMillis) -> {
+			(localTimeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				userExecutor.shutdown();
 				return true;

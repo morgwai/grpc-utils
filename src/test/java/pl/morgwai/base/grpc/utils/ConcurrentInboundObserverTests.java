@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 import com.google.common.collect.Comparators;
 import io.grpc.stub.*;
 import org.junit.*;
+import org.junit.experimental.categories.Category;
 import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.utils.concurrent.Awaitable;
@@ -25,8 +26,11 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 
-	/** Timeout for single-threaded, no-processing-delay operations. */
+	/** Timeout for standard tests. */
 	public static final long TIMEOUT_MILLIS = 500L;
+
+	/** Timeout for slow tests. */
+	public static final long SLOW_TIMEOUT_MILLIS = 10_000L;
 
 
 
@@ -140,7 +144,32 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 
-	void testSynchronousProcessing(int numberOfMessages) throws InterruptedException {
+	@Test
+	public void testSynchronousProcessingInfiniteBuffer() throws InterruptedException {
+		testSynchronousProcessing(50, 0, 0L, TIMEOUT_MILLIS);
+	}
+
+	@Test
+	public void testSynchronousProcessingBufferOftenUnreadyFor3ms()
+		throws InterruptedException {
+		testSynchronousProcessing(30, 4, 3L, TIMEOUT_MILLIS);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testSynchronousProcessingBufferOftenUnreadyFor3ms4kMsgs()
+		throws InterruptedException {
+		testSynchronousProcessing(4000, 5, 3L, SLOW_TIMEOUT_MILLIS);
+	}
+
+	void testSynchronousProcessing(
+		int numberOfMessages,
+		int outputBufferSize,
+		long unreadyDurationMillis,
+		long timeoutMillis
+	) throws InterruptedException {
+		fakeOutboundObserver.outputBufferSize = outputBufferSize;
+		fakeOutboundObserver.unreadyDurationMillis = unreadyDurationMillis;
 		final int[] onHalfClosedHandlerCallCounterHolder = {0};
 		final var testSubject = newConcurrentInboundObserver(
 			1,
@@ -154,9 +183,9 @@ public abstract class ConcurrentInboundObserverTests {
 
 		startMessageDelivery(testSubject, new InboundMessageProducer(numberOfMessages));
 		Awaitable.awaitMultiple(
-			TIMEOUT_MILLIS,
+			timeoutMillis,
 			fakeOutboundObserver::awaitFinalization,
-			(timeoutMillis) -> {
+			(localTimeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
 				return true;
 			},
@@ -170,19 +199,6 @@ public abstract class ConcurrentInboundObserverTests {
 		assertEquals("onHalfClosedHandler should be called once",
 				1, onHalfClosedHandlerCallCounterHolder[0]);
 		performStandardVerifications(fakeOutboundObserver);
-	}
-
-	@Test
-	public void testSynchronousProcessingOutboundObserverAlwaysReady() throws InterruptedException {
-		testSynchronousProcessing(10);
-	}
-
-	@Test
-	public void testSynchronousProcessingOutboundObserverUnreadySometimes()
-			throws InterruptedException {
-		fakeOutboundObserver.outputBufferSize = 4;
-		fakeOutboundObserver.unreadyDurationMillis = 3L;
-		testSynchronousProcessing(15);
 	}
 
 
@@ -377,55 +393,195 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 	@Test
-	public void testAsyncSequentialProcessingOf40Messages() throws InterruptedException {
-		fakeOutboundObserver.outputBufferSize = 6;
-		fakeOutboundObserver.unreadyDurationMillis = 3L;
-		testAsyncProcessing(40, 3L, 4L, 1, 1, 2000L);
+	public void testAsyncSequentialProcessingBufferOftenUnreadyFor3ms()
+			throws InterruptedException {
+		testAsyncProcessing(
+			20, 3L,
+			1, 1, 4L,
+			6, 3L,
+			TIMEOUT_MILLIS
+		);
 		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
 				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
 	}
 
 	@Test
-	public void testAsyncProcessingOf100MessagesIn5Threads() throws InterruptedException {
-		fakeOutboundObserver.outputBufferSize = 13;
-		fakeOutboundObserver.unreadyDurationMillis = 3L;
-		testAsyncProcessing(100, 3L, 4L, 3, 5, 2000L);
+	public void testAsyncSequentialProcessingBufferVeryOftenUnreadyFor0ms()
+		throws InterruptedException {
+		testAsyncProcessing(
+			50, 1L,
+			1, 1, 1L,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
+				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncSequentialProcessingBufferVeryOftenUnreadyFor0ms2kMsgs()
+		throws InterruptedException {
+		testAsyncProcessing(
+			2000, 1L,
+			1, 1, 1L,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+		assertTrue("messages should be written in order", Comparators.isInStrictOrder(
+				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
+	}
+
+	@Test
+	public void testAsyncConcurrentProcessingBufferOftenUnreadyFor3ms()
+			throws InterruptedException {
+		testAsyncProcessing(
+			100, 3L,
+			5, 5, 4L,
+			6, 3L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncConcurrentProcessingBufferOftenUnreadyFor3ms2kMsgs()
+			throws InterruptedException {
+		testAsyncProcessing(
+			2000, 3L,
+			5, 5, 4L,
+			6, 3L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testAsyncConcurrentProcessingBufferOftenUnreadyFor3msTooFewThreads()
+			throws InterruptedException {
+		testAsyncProcessing(
+			100, 3L,
+			10, 5, 4L,
+			6, 3L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncConcurrentProcessingBufferOftenUnreadyFor3msTooFewThreads3kMsgs()
+			throws InterruptedException {
+		testAsyncProcessing(
+			3000, 3L,
+			10, 5, 4L,
+			6, 3L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testAsyncConcurrentProcessingBufferVeryOftenUnreadyFor0msNoDelays()
+			throws InterruptedException {
+		testAsyncProcessing(
+			100, 0L,
+			5, 5, 0L,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncConcurrentProcessingBufferVeryOftenUnreadyFor0msNoDelays200kMsgs()
+			throws InterruptedException {
+		testAsyncProcessing(
+			200_000, 0L,
+			5, 5, 0L,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testAsyncConcurrentProcessingBufferSometimesUnreadyFor15ms()
+			throws InterruptedException {
+		testAsyncProcessing(
+			100, 3L,
+			5, 5, 4L,
+			23, 15L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncConcurrentProcessingBufferSometimesUnreadyFor15ms2kMsgs()
+		throws InterruptedException {
+		testAsyncProcessing(
+			2000, 3L,
+			5, 5, 4L,
+			23, 15L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testAsyncConcurrentProcessingBufferSometimesUnreadyFor15msTooFewThreads()
+		throws InterruptedException {
+		testAsyncProcessing(
+			100, 3L,
+			10, 5, 4L,
+			23, 15L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testAsyncConcurrentProcessingBufferSometimesUnreadyFor15msTooFewThreads2kMsgs()
+		throws InterruptedException {
+		testAsyncProcessing(
+			2000, 3L,
+			10, 5, 4L,
+			23, 15L,
+			SLOW_TIMEOUT_MILLIS
+		);
 	}
 
 	void testAsyncProcessing(
-		final int numberOfInboundMessages,
-		final long maxInboundDeliveryDelayMillis,
-		final long maxProcessingDelayMillis,
-		final int numOfResultsPerInboundMessage,
-		final int maxConcurrentInboundMessages,
-		final long timeoutMillis
+		int numberOfInboundMessages,
+		long maxInboundDeliveryDelayMillis,
+
+		int maxConcurrentInboundMessages,
+		int numberOfExecutorThreads,
+		long maxProcessingDelayMillis,
+
+		int outputBufferSize,
+		long unreadyDurationMillis,
+
+		long timeoutMillis
 	) throws InterruptedException {
-		final var userExecutor = new LoggingExecutor("userExecutor", maxConcurrentInboundMessages);
+		fakeOutboundObserver.outputBufferSize = outputBufferSize;
+		fakeOutboundObserver.unreadyDurationMillis = unreadyDurationMillis;
+		final var userExecutor = new LoggingExecutor("userExecutor", numberOfExecutorThreads);
 		final var testSubject = newConcurrentInboundObserver(
 			maxConcurrentInboundMessages,
 			(inboundMessage, individualObserver) -> {
 				final var responseCount = new AtomicInteger(0);
-				for (int i = 0; i < numOfResultsPerInboundMessage; i++) {
-					final var resultMessageNumber = i;
-					userExecutor.execute(new Runnable() {
+				userExecutor.execute(new Runnable() {
 
-						@Override public void run() {
-							simulateProcessingDelay(
-								maxProcessingDelayMillis,
-								inboundMessage.id + responseCount.get()
-							);
-							individualObserver.onNext(new OutboundMessage(inboundMessage.id));
-							if (responseCount.incrementAndGet() == numOfResultsPerInboundMessage) {
-								individualObserver.onCompleted();
-							}
-						}
+					@Override public void run() {
+						simulateProcessingDelay(
+							maxProcessingDelayMillis,
+							inboundMessage.id + responseCount.get()
+						);
+						individualObserver.onNext(new OutboundMessage(inboundMessage.id));
+						individualObserver.onCompleted();
+					}
 
-						@Override public String toString() {
-							return "task: { inboundMessageId: " + inboundMessage.id
-								+ ", resultNo: " + resultMessageNumber + " }";
-						}
-					});
-				}
+					@Override public String toString() {
+						return "task: { inboundMessageId: " + inboundMessage.id + " }";
+					}
+				});
 			},
 			interruptThreadErrorHandler(Thread.currentThread())
 		);
@@ -446,11 +602,8 @@ public abstract class ConcurrentInboundObserverTests {
 			userExecutor::awaitTermination
 		);
 
-		assertEquals(
-			"correct number of messages should be written",
-			numberOfInboundMessages * numOfResultsPerInboundMessage,
-			fakeOutboundObserver.getOutputData().size()
-		);
+		assertEquals("correct number of messages should be written",
+				numberOfInboundMessages, fakeOutboundObserver.getOutputData().size());
 		userExecutor.verify();
 		performStandardVerifications(fakeOutboundObserver);
 	}
@@ -458,32 +611,130 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 	@Test
-	public void testDispatchingOnReadyHandlerIntegrationSingleThread() throws InterruptedException {
-		fakeOutboundObserver.outputBufferSize = 6;
-		fakeOutboundObserver.unreadyDurationMillis = 3L;
-		testDispatchingOnReadyHandlerIntegration(10, 0L, 0L, 1, 10, 1, 2, 2000L);
+	public void testOnReadyHandlerIntegrationSequentialSingleTask()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			30, 0L,
+			1, 5, 1, 2, 0L,
+			4, 3L,
+			TIMEOUT_MILLIS
+		);
 		assertTrue("messages should be written in order", Comparators.isInOrder(
 				fakeOutboundObserver.getOutputData(), outboundMessageComparator));
 	}
 
 	@Test
-	public void testDispatchingOnReadyHandlerIntegrationMultiThread() throws InterruptedException {
-		fakeOutboundObserver.outputBufferSize = 6;
-		fakeOutboundObserver.unreadyDurationMillis = 3L;
-		testDispatchingOnReadyHandlerIntegration(20, 3L, 4L, 3, 5, 3, 5, 2000L);
+	public void testOnReadyHandlerIntegrationMultiThreadBufferOftenUnreadyFor3ms()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			20, 3L,
+			3, 3, 3, 9, 4L,
+			6, 3L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testOnReadyHandlerIntegrationMultiThreadBufferOftenUnreadyFor3ms500msgs()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			500, 3L,
+			3, 3, 3, 9, 4L,
+			6, 3L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testOnReadyHandlerIntegrationMultiThreadBufferVeryOftenUnreadyFor0msNoDelays()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			20, 0L,
+			3, 3, 3, 9, 0L,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public
+	void testOnReadyHandlerIntegrationMultiThreadBufferVeryOftenUnreadyFor0msNoDelays10kMsgs()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			10_000, 0L,
+			3, 3, 3, 9, 0L,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test public void
+	testOnReadyHandlerIntegrationMultiThreadBufferVeryOftenUnreadyFor0msNoDelaysTooFewThreads()
+			throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			20, 0L,
+			3, 3, 3, 5, 0L,
+			1, 0L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void
+	testOnReadyHandlerIntegrationMultiThreadBufferVeryOftenUnreadyFor0msNoDelaysTooFewThreads10kMsgs
+			() throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			10_000, 0L,
+			3, 3, 3, 5, 0L,
+			1, 0L,
+			SLOW_TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	public void testOnReadyHandlerIntegrationMultiThreadBufferSometimesUnreadyFor15ms()
+		throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			20, 3L,
+			3, 3, 3, 9, 4L,
+			40, 15L,
+			TIMEOUT_MILLIS
+		);
+	}
+
+	@Test
+	@Category(SlowTests.class)
+	public void testOnReadyHandlerIntegrationMultiThreadBufferSometimesUnreadyFor15ms400msgs()
+		throws InterruptedException {
+		testDispatchingOnReadyHandlerIntegration(
+			400, 3L,
+			3, 3, 3, 9, 4L,
+			40, 15L,
+			SLOW_TIMEOUT_MILLIS
+		);
 	}
 
 	void testDispatchingOnReadyHandlerIntegration(
-		final int numberOfInboundMessages,
-		final long maxInboundDeliveryDelayMillis,
-		final long maxProcessingDelayMillis,
-		final int handlerTasksPerMessage,
-		final int numberOfResultMessagesPerTask,
-		final int maxConcurrentInboundMessages,
-		final int executorThreads,
-		final long timeoutMillis
+		int numberOfInboundMessages,
+		long maxInboundDeliveryDelayMillis,
+
+		int handlerTasksPerMessage,
+		int resultsPerTask,
+		int maxConcurrentInboundMessages,
+		int numberOfExecutorThreads,
+		long maxProcessingDelayMillis,
+
+		int outputBufferSize,
+		long unreadyDurationMillis,
+
+		long timeoutMillis
 	) throws InterruptedException {
-		final var userExecutor = new LoggingExecutor("userExecutor", executorThreads);
+		fakeOutboundObserver.outputBufferSize = outputBufferSize;
+		fakeOutboundObserver.unreadyDurationMillis = unreadyDurationMillis;
+		final var userExecutor = new LoggingExecutor("userExecutor", numberOfExecutorThreads);
 		final var testSubject = newConcurrentInboundObserver(
 			maxConcurrentInboundMessages,
 			(inboundMessage, individualObserver) -> {
@@ -498,7 +749,7 @@ public abstract class ConcurrentInboundObserverTests {
 						resultCounters[i]++;
 						return new OutboundMessage(inboundMessage.id);
 					},
-					(i) -> resultCounters[i] < numberOfResultMessagesPerTask
+					(i) -> resultCounters[i] < resultsPerTask
 				);
 			},
 			interruptThreadErrorHandler(Thread.currentThread())
@@ -522,7 +773,7 @@ public abstract class ConcurrentInboundObserverTests {
 
 		assertEquals(
 			"correct number of messages should be written",
-			numberOfInboundMessages * handlerTasksPerMessage * numberOfResultMessagesPerTask,
+			numberOfInboundMessages * handlerTasksPerMessage * resultsPerTask,
 			fakeOutboundObserver.getOutputData().size()
 		);
 		userExecutor.verify();
