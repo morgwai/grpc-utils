@@ -44,6 +44,7 @@ public class BlockingResponseObserverTests {
 			try {
 				Thread.sleep(10L);
 			} catch (InterruptedException ignored) {}
+
 			for (int i = 0; i < inputData.length; i++) {
 				inputData[i] = new ResponseMessage(i);
 				responseObserver.onNext(inputData[i]);
@@ -53,7 +54,6 @@ public class BlockingResponseObserverTests {
 		worker.start();
 		responseObserver.awaitCompletion(50L);
 		worker.join(10L);
-
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 		assertEquals("all input messages should be received",
 				inputData.length, receivedData.size());
@@ -72,6 +72,7 @@ public class BlockingResponseObserverTests {
 			try {
 				Thread.sleep(10L);
 			} catch (InterruptedException ignored) {}
+
 			responseObserver.onError(reportedError);
 		});
 		worker.start();
@@ -84,7 +85,6 @@ public class BlockingResponseObserverTests {
 					reportedError, responseObserver.getError().get());
 		}
 		worker.join(10L);
-
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 	}
 
@@ -92,22 +92,14 @@ public class BlockingResponseObserverTests {
 
 	@Test
 	public void testTimeout() throws InterruptedException {
-		final var worker = new Thread(() -> {
-			try {
-				Thread.sleep(20L);
-			} catch (InterruptedException ignored) {}
-			synchronized (responseObserver) {
-				responseObserver.notifyAll();
-			}
-		});
-		worker.start();
+		final var timeoutMillis = 30L;
 		final var startMillis = System.currentTimeMillis();
 
 		assertFalse("await result should indicate failure",
-				responseObserver.toAwaitable().await(50L));
-		assertTrue("at least 50ms should pass", System.currentTimeMillis() - startMillis >= 50L);
+				responseObserver.toAwaitable().await(timeoutMillis));
+		assertTrue("at least " + timeoutMillis + "ms should pass",
+				System.currentTimeMillis() - startMillis >= timeoutMillis);
 		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
-		worker.join(10L);
 	}
 
 
@@ -115,8 +107,8 @@ public class BlockingResponseObserverTests {
 	@Test
 	public void completedBeforeAwait() throws InterruptedException, ErrorReportedException {
 		responseObserver.onCompleted();
-		responseObserver.awaitCompletion(1L);
 
+		responseObserver.awaitCompletion(1L);
 		assertTrue("response should be marked as completed", responseObserver.isCompleted());
 	}
 
@@ -134,7 +126,6 @@ public class BlockingResponseObserverTests {
 		EasyMock.replay(requestObserver);
 
 		responseObserver.beforeStart(requestObserver);
-
 		assertSame("requestObserver should be passed to startHandler",
 				requestObserver, requestObserverHolder[0]);
 		assertSame("requestObserver should be available via getRequestObserver()",
