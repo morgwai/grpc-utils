@@ -17,8 +17,8 @@ import pl.morgwai.base.utils.concurrent.Awaitable;
  * {@link #onCompleted()} or {@link #onError(Throwable)}.
  * <p>
  * Typical usage:</p>
- * <pre>
- * var responseObserver = new BlockingResponseObserver&lt;ResponseMessage&gt;(response -&gt; {
+ * <pre>{@code
+ * final var responseObserver = new BlockingResponseObserver<ResponseMessage>((response) -> {
  *     // handle responses here...
  * });
  * myGrpcServiceStub.myRemoteProcedure(someRequest, responseObserver);
@@ -29,7 +29,7 @@ import pl.morgwai.base.utils.concurrent.Awaitable;
  * } catch (ErrorReportedException e) {
  *     Throwable reportedError = e.getCause();
  *     // handle error that was reported via onError(reportedError) here...
- * }</pre>
+ * }}</pre>
  */
 public class BlockingResponseObserver<RequestT, ResponseT>
 		implements ClientResponseObserver<RequestT, ResponseT> {

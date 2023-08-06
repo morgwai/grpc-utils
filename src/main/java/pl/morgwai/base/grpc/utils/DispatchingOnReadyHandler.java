@@ -20,21 +20,21 @@ import io.grpc.stub.CallStreamObserver;
  * param and parallelized according to the value of {@code numberOfTasks} constructor param.
  * <p>
  * Typical usage in streaming-server methods:</p>
- * <pre>
+ * <pre>{@code
  * public void myServerStreamingMethod(
- *         RequestMessage request, StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+ *         RequestMessage request, StreamObserver<ResponseMessage> basicResponseObserver) {
  *     final var processor = new MyRequestProcessor(request, NUMBER_OF_TASKS);
  *     final var responseObserver =
- *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
+ *             (ServerCallStreamObserver<ResponseMessage>) basicResponseObserver;
  *     responseObserver.setOnCancelHandler(processor::cancel);
  *     DispatchingOnReadyHandler.copyWithFlowControl(
  *         responseObserver,
  *         taskExecutor,
  *         NUMBER_OF_TASKS,
- *         (taskNumber) -&gt; processor.hasMoreResults(taskNumber),
- *         (taskNumber) -&gt; processor.produceNextResult(taskNumber)
+ *         (taskNumber) -> processor.hasMoreResults(taskNumber),
+ *         (taskNumber) -> processor.produceNextResult(taskNumber)
  *     ));
- * }</pre>
+ * }}</pre>
  */
 public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 

@@ -94,26 +94,26 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #onErrorHandler}.
 	 * <p>
 	 * Example:</p>
-	 * <pre>
-	 * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
-	 *         StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+	 * <pre>{@code
+	 * public StreamObserver<RequestMessage> myBiDiMethod(
+	 *         StreamObserver<ResponseMessage> basicResponseObserver) {
 	 *     final var responseObserver =
-	 *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
+	 *             (ServerCallStreamObserver<ResponseMessage>) basicResponseObserver;
 	 *     return newSimpleConcurrentServerRequestObserver(
 	 *         responseObserver,
 	 *         MAX_CONCURRENTLY_PROCESSED_REQUESTS,
-	 *         (request, individualRequestProcessingResultsObserver) -&gt; executor.execute(
-	 *             () -&gt; {
+	 *         (request, individualRequestProcessingResultsObserver) -> executor.execute(
+	 *             () -> {
 	 *                 final var result = process(request);
 	 *                 individualRequestProcessingResultsObserver.onNext(result);
 	 *                 individualRequestProcessingResultsObserver.onCompleted();
 	 *             }
 	 *         ),
-	 *         (error, thisObserver) -&gt; {
+	 *         (error, thisObserver) -> {
 	 *             // client cancelled, abort ongoing tasks if needed
 	 *         }
 	 *     );
-	 * }</pre>
+	 * }}</pre>
 	 *
 	 * @see #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 *     ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for descriptions of the
@@ -145,35 +145,35 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #onErrorHandler}.
 	 * <p>
 	 * Example:</p>
-	 * <pre>
-	 * public StreamObserver&lt;ParentRequest&gt; parentRpc(
-	 *         StreamObserver&lt;ParentResponse&gt; responseObserver) {
+	 * <pre>{@code
+	 * public StreamObserver<ParentRequest> parentRpc(
+	 *         StreamObserver<ParentResponse> responseObserver) {
 	 *     final var parentResponseObserver =
-	 *             (ServerCallStreamObserver&lt;ParentResponse&gt;) responseObserver;
-	 *     final StreamObserver&lt;ParentRequest&gt;[] parentRequestObserverHolder =
+	 *             (ServerCallStreamObserver<ParentResponse>) responseObserver;
+	 *     final StreamObserver<ParentRequest>[] parentRequestObserverHolder =
 	 *             new StreamObserver[1];
 	 *     nestedServiceStub.nestedRpc(newConcurrentClientResponseObserver(
 	 *         parentResponseObserver,
 	 *         MAX_CONCURRENTLY_PROCESSED_NESTED_RESPONSES,
-	 *         (nestedResponse, individualNestedResponseProcessingResultsObserver) -&gt; {
+	 *         (nestedResponse, individualNestedResponseProcessingResultsObserver) -> {
 	 *             final var parentResponse = postProcess(nestedResponse);
 	 *             individualNestedResponseProcessingResultsObserver.onNext(parentResponse);
 	 *             individualNestedResponseProcessingResultsObserver.onCompleted();
 	 *         },
-	 *         (error, thisObserver) -&gt; {
+	 *         (error, thisObserver) -> {
 	 *             thisObserver.reportErrorAfterTasksAndInboundComplete(error);
 	 *             thisObserver.onCompleted();
 	 *         },
-	 *         (nestedCallRequestObserver) -&gt; {
+	 *         (nestedCallRequestObserver) -> {
 	 *             parentRequestObserverHolder[0] = newConcurrentServerRequestObserver(
 	 *                 nestedCallRequestObserver,
 	 *                 MAX_CONCURRENTLY_PROCESSED_PARENT_REQUESTS,
-	 *                 (parentRequest, individualParentRequestProcessingResultsObserver) -&gt; {
+	 *                 (parentRequest, individualParentRequestProcessingResultsObserver) -> {
 	 *                     final var nestedRequest = preProcess(parentRequest);
 	 *                     individualParentRequestProcessingResultsObserver.onNext(nestedRequest);
 	 *                     individualParentRequestProcessingResultsObserver.onCompleted();
 	 *                 },
-	 *                 (error, thisObserver) -&gt; {
+	 *                 (error, thisObserver) -> {
 	 *                     // client cancelled, abort tasks if needed
 	 *                 },
 	 *                 parentResponseObserver
@@ -181,7 +181,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *         }
 	 *     ));
 	 *     return parentRequestObserverHolder[0];
-	 * }</pre>
+	 * }}</pre>
 	 * @param outboundObserver request observer of the client call to which results should be
 	 *     streamed (or response observer of the given server method in case of
 	 *     {@link #newSimpleConcurrentServerRequestObserver(ServerCallStreamObserver, int,
@@ -239,39 +239,38 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link #onErrorHandler} and {@link #onBeforeStartHandler}.
 	 * <p>
 	 * Chained call example:</p>
-	 * <pre>
-	 * stub.chainedCall(new ClientResponseObserver&lt;ChainedRequest, ChainedResponse&gt;() {
+	 * <pre>{@code
+	 * stub.chainedCall(new ClientResponseObserver<ChainedRequest, ChainedResponse>() {
 	 *
-	 *     &commat;Override
 	 *     public void beforeStart(
-	 *             ClientCallStreamObserver&lt;ChainedRequest&gt; chainedRequestObserver) {
+	 *             ClientCallStreamObserver<ChainedRequest> chainedRequestObserver) {
 	 *         anotherStub.firstCall(newConcurrentClientResponseObserver(
 	 *             chainedRequestObserver,
 	 *             MAX_CONCURRENTLY_PROCESSED_FIRST_CALL_RESPONSES,
-	 *             (firstCallResponse, individualFirstCallResponseProcessingResultsObserver) -&gt; {
+	 *             (firstCallResponse, individualFirstCallResponseProcessingResultsObserver) -> {
 	 *                 final var chainedRequest = midProcess(firstCallResponse);
 	 *                 individualFirstCallResponseProcessingResultsObserver.onNext(chainedRequest);
 	 *                 individualFirstCallResponseProcessingResultsObserver.onCompleted();
 	 *             },
-	 *             (error, thisObserver) -&gt; {
+	 *             (error, thisObserver) -> {
 	 *                 thisObserver.reportErrorAfterTasksAndInboundComplete(error);
 	 *                 thisObserver.onCompleted();
 	 *             },
-	 *             (ClientCallStreamObserver&lt;FirstCallRequest&gt; firstCallRequestObserver) -&gt;
+	 *             (ClientCallStreamObserver<FirstCallRequest> firstCallRequestObserver) ->
 	 *                     copyWithFlowControl(firstCallRequestProducer, firstCallRequestObserver)
 	 *         ));
 	 *     }
 	 *
-	 *     &commat;Override public void onNext(ChainedResponse chainedResponse) {
+	 *     public void onNext(ChainedResponse chainedResponse) {
 	 *         // display chainedResponse on the UI
 	 *     }
-	 *     &commat;Override public void onError(Throwable error) {
+	 *     public void onError(Throwable error) {
 	 *         // display some error message on the UI
 	 *     }
-	 *     &commat;Override public void onCompleted() {
+	 *     public void onCompleted() {
 	 *         // display some completion message on the UI
 	 *     }
-	 * });</pre>
+	 * });}</pre>
 	 * <p>
 	 * See {@link #newConcurrentServerRequestObserver(CallStreamObserver, int, BiConsumer,
 	 * BiConsumer, ServerCallStreamObserver) newConcurrentServerRequestObserver(...)} for a nested
@@ -376,28 +375,28 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * buffering. Consider using {@link DispatchingOnReadyHandler} in case work must be dispatched
 	 * to other threads or {@link StreamObservers#copyWithFlowControl(Iterable, CallStreamObserver)}
 	 * otherwise:</p>
-	 * <pre>
-	 * class RequestProcessor implements Iterator&lt;ResponseMessage&gt; {
+	 * <pre>{@code
+	 * class RequestProcessor implements Iterator<ResponseMessage> {
 	 *     RequestProcessor(RequestMessage request) { ... }
 	 *     public boolean hasNext() { ... }
 	 *     public Response next() { ... }
 	 * }
 	 *
-	 * public StreamObserver&lt;RequestMessage&gt; myBiDiMethod(
-	 *         StreamObserver&lt;ResponseMessage&gt; basicResponseObserver) {
+	 * public StreamObserver<RequestMessage> myBiDiMethod(
+	 *         StreamObserver<ResponseMessage> basicResponseObserver) {
 	 *     final var responseObserver =
-	 *             (ServerCallStreamObserver&lt;ResponseMessage&gt;) basicResponseObserver;
-	 *     return new ConcurrentInboundObserver&lt;&gt;(
+	 *             (ServerCallStreamObserver<ResponseMessage>) basicResponseObserver;
+	 *     return new ConcurrentInboundObserver<>(
 	 *         responseObserver,
 	 *         1,
-	 *         (requestMessage, individualInboundMessageResultsObserver) -&gt;
+	 *         (requestMessage, individualInboundMessageResultsObserver) ->;
 	 *                 StreamObservers.copyWithFlowControl(
 	 *                         new RequestProcessor(requestMessage),
 	 *                         individualRequestMessageResponseObserver),
-	 *         (error, thisObserver) -&gt; abortAllRequestProcessors(),
+	 *         (error, thisObserver) -> abortAllRequestProcessors(),
 	 *         responseObserver
 	 *     );
-	 * }</pre>
+	 * }}</pre>
 	 * <p>
 	 * The default implementation calls {@link #onInboundMessageHandler}.</p>
 	 *
