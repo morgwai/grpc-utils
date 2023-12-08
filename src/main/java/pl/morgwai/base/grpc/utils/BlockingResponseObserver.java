@@ -41,6 +41,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		this(responseHandler, null);
 	}
 
+
+
 	/**
 	 * Initializes {@link #responseHandler} and {@link #beforeStartHandler}.
 	 */
@@ -51,6 +53,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		this.responseHandler = responseHandler != null ? responseHandler::accept: null;
 		this.beforeStartHandler = beforeStartHandler != null ? beforeStartHandler::accept : null;
 	}
+
+
 
 	/**
 	 * Constructor for those who prefer to override methods rather than provide functional handlers
@@ -76,6 +80,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		return completed;
 	}
 
+
+
 	/**
 	 * Calls {@link #awaitCompletion(long, TimeUnit)
 	 * awaitCompletion(timeoutMillis, TimeUnit.MILLISECONDS)}.
@@ -84,6 +90,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 			throws ErrorReportedException, InterruptedException {
 		return awaitCompletion(timeoutMillis, TimeUnit.MILLISECONDS);
 	}
+
+
 
 	/**
 	 * Awaits without a timeout for {@link #onCompleted()} or {@link #onError(Throwable)} to be
@@ -94,6 +102,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		latch.await();
 		if (error != null) throw new ErrorReportedException(error);
 	}
+
+
 
 	/**
 	 * Returns {@link Awaitable} of {@link #awaitCompletion(long, TimeUnit)}. If
@@ -151,6 +161,8 @@ public class BlockingResponseObserver<RequestT, ResponseT>
 		return Optional.ofNullable(requestObserver);
 	}
 	ClientCallStreamObserver<RequestT> requestObserver;
+
+
 
 	/**
 	 * The default implementation stores {@code requestObserver} (so that it can be later retrieved
