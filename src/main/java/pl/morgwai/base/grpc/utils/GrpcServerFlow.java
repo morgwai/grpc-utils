@@ -11,14 +11,13 @@ import io.grpc.stub.*;
  * it exists only for documentation purposes).
  * <p>
  * In a stub code generated from a proto file in {@link BindableService#bindService()} method, a
- * {@link ServerCallHandler} for each method is created: depending on <b>client</b> type either
- * {@link ServerCalls.StreamingServerCallHandler} or {@link ServerCalls.UnaryServerCallHandler},
- * ie: <code>Streaming</code> / <code>Unary</code> prefix refers to client's type
- * (<code>Server</code> refers to <code>Call</code>).<br/>
+ * {@link ServerCallHandler} for each method is created: depending on <b>request</b> type either a
+ * {@link ServerCalls.StreamingServerCallHandler} or a
+ * {@link ServerCalls.UnaryServerCallHandler}<br/>
  * When a call is received {@link ServerCallHandler#startCall(ServerCall, Metadata)} is called in
- * the interceptor chain, which returns a {@link ServerCall.Listener} specific for the client
+ * the interceptor chain, which returns a {@link ServerCall.Listener} specific for the request
  * type.</p>
- * <p><b>Streaming client flow:</b></p>
+ * <p><b>Streaming request flow:</b></p>
  * <ol>
  *   <li>When a call is received,
  *     <b>{@link ServerCalls.StreamingServerCallHandler#startCall(ServerCall, Metadata)}</b> calls
@@ -40,7 +39,7 @@ import io.grpc.stub.*;
  *     StreamingServerCallListener.onHalfClose()}</b> calls user's request observer
  *     {@link StreamObserver#onCompleted() onCompleted()}.</li>
  * </ol>
- * <p><b>Unary client flow:</b></p>
+ * <p><b>Unary request flow:</b></p>
  * <ol>
  *   <li>When a call is received,
  *     <b>{@link ServerCalls.UnaryServerCallHandler#startCall(ServerCall, Metadata)}</b> requests
