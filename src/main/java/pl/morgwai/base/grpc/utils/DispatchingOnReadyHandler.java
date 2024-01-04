@@ -152,7 +152,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		Supplier<? extends MessageT> messageProducer,
-		Supplier<Boolean> producerHasNextIndicator
+		BooleanSupplier producerHasNextIndicator
 	) {
 		return copyWithFlowControl(
 			outboundObserver,
@@ -173,7 +173,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 		CallStreamObserver<? super MessageT> outboundObserver,
 		Executor taskExecutor,
 		Supplier<? extends MessageT> messageProducer,
-		Supplier<Boolean> producerHasNextIndicator,
+		BooleanSupplier producerHasNextIndicator,
 		String label
 	) {
 		return copyWithFlowControl(
@@ -181,7 +181,7 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 			taskExecutor,
 			1,
 			(always0) -> messageProducer.get(),
-			(always0) -> producerHasNextIndicator.get(),
+			(always0) -> producerHasNextIndicator.getAsBoolean(),
 			label
 		);
 	}
@@ -219,11 +219,11 @@ public class DispatchingOnReadyHandler<MessageT> implements Runnable {
 	 * @param label for logging and debugging purposes.
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction, IntFunction)
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Iterator[])
-	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, Supplier)
+	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, BooleanSupplier)
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, int, IntFunction, IntFunction,
 	 *     String)
 	 * @see #copyWithFlowControl(CallStreamObserver, Executor, String, Iterator[])
-	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, Supplier, String)
+	 * @see #copyWithFlowControl(CallStreamObserver, Executor, Supplier, BooleanSupplier, String)
 	 */
 	public DispatchingOnReadyHandler(
 		CallStreamObserver<? super MessageT> outboundObserver,
