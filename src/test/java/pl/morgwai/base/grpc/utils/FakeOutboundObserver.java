@@ -809,12 +809,6 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
-		@Override
-		public ForcedTerminationAftermath tryForceTerminate() {
-			log.severe(name + " shutting down forcibly");
-			return super.tryForceTerminate();
-		}
-
 		public boolean awaitTermination(long timeoutMillis) throws InterruptedException {
 			return super.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
 		}
@@ -831,11 +825,10 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 						getUncaughtTaskExceptions().containsKey(exception));
 			}
 			if (isTerminated()) return;
-			final var aftermath = tryForceTerminate();
-			for (var stuckTask: aftermath.runningTasks) {
+			for (var stuckTask: getRunningTasks()) {
 				log.severe(getName() + ": stuck " + stuckTask);
 			}
-			for (var unexecutedTask: aftermath.unexecutedTasks) {
+			for (var unexecutedTask: shutdownNow()) {
 				log.severe(getName() + ": unexecuted " + unexecutedTask);
 			}
 			fail(getName() + " should shutdown cleanly");
