@@ -1,17 +1,19 @@
 // Copyright (c) Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0
 package pl.morgwai.base.grpc.utils;
 
-import java.util.LinkedList;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.*;
+import java.util.logging.*;
 
 import io.grpc.stub.ClientCallStreamObserver;
 import org.easymock.EasyMock;
 import org.junit.*;
 import pl.morgwai.base.grpc.utils.BlockingResponseObserver.ErrorReportedException;
 
+import static java.util.logging.Level.FINEST;
+import static java.util.logging.Level.WARNING;
+
 import static org.junit.Assert.*;
+import static pl.morgwai.base.jul.JulConfigurator.*;
 
 
 
@@ -146,19 +148,17 @@ public class BlockingResponseObserverTests {
 
 
 
-	// change the below value if you need logging
-	// FINER will log every message received
-	static Level LOG_LEVEL = Level.SEVERE;
-
 	static final Logger log = Logger.getLogger(BlockingResponseObserverTests.class.getName());
 
+
+
+	/** {@code FINER} will log every message received. */
 	@BeforeClass
 	public static void setupLogging() {
-		try {
-			LOG_LEVEL = Level.parse(System.getProperty(
-					BlockingResponseObserverTests.class.getPackageName() + ".level"));
-		} catch (Exception ignored) {}
-		log.setLevel(LOG_LEVEL);
-		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
+		addOrReplaceLoggingConfigProperties(Map.of(
+			LEVEL_SUFFIX, WARNING.toString(),
+			ConsoleHandler.class.getName() + LEVEL_SUFFIX, FINEST.toString()
+		));
+		overrideLogLevelsWithSystemProperties("pl.morgwai");
 	}
 }

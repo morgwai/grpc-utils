@@ -2,13 +2,13 @@
 package pl.morgwai.base.grpc.utils;
 
 import java.util.Comparator;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.logging.*;
 
 import com.google.common.collect.Comparators;
 import io.grpc.stub.*;
@@ -18,7 +18,11 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.utils.concurrent.Awaitable;
 
+import static java.util.logging.Level.FINEST;
+import static java.util.logging.Level.WARNING;
+
 import static org.junit.Assert.*;
+import static pl.morgwai.base.jul.JulConfigurator.*;
 
 
 
@@ -844,25 +848,22 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 
+	static final Logger log = Logger.getLogger(ConcurrentInboundObserverTests.class.getName());
+
+
+
 	/**
-	 * Change the below value if you need logging:<br/>
 	 * <code>FINE</code> will log finalizing events and marking observer ready/unready.<br/>
 	 * <code>FINER</code> will log every message received/sent and every task dispatched
 	 * to {@link LoggingExecutor}.<br/>
 	 * <code>FINEST</code> will log concurrency debug info.
 	 */
-	static Level LOG_LEVEL = Level.WARNING;
-
-	static final Logger log = Logger.getLogger(ConcurrentInboundObserverTests.class.getName());
-
 	@BeforeClass
 	public static void setupLogging() {
-		try {
-			LOG_LEVEL = Level.parse(System.getProperty(
-					ConcurrentInboundObserverTests.class.getPackageName() + ".level"));
-		} catch (Exception ignored) {}
-		log.setLevel(LOG_LEVEL);
-		FakeOutboundObserver.getLogger().setLevel(LOG_LEVEL);
-		for (final var handler: Logger.getLogger("").getHandlers()) handler.setLevel(LOG_LEVEL);
+		addOrReplaceLoggingConfigProperties(Map.of(
+			LEVEL_SUFFIX, WARNING.toString(),
+			ConsoleHandler.class.getName() + LEVEL_SUFFIX, FINEST.toString()
+		));
+		overrideLogLevelsWithSystemProperties("pl.morgwai");
 	}
 }
