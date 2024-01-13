@@ -115,7 +115,7 @@ public class BackendServer extends BackendImplBase {
 
 			@Override protected void onInboundMessage(
 				ChainedRequest request,
-				OutboundSubstreamObserver individualObserver
+				SubstreamObserver<ChainedResponse> individualObserver
 			) {
 				executor.execute(
 					()-> {

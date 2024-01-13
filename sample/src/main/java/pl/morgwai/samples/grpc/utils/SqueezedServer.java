@@ -208,7 +208,7 @@ public class SqueezedServer extends FrontendImplBase {
 
 			@Override protected void onInboundMessage(
 				NestedResponse nestedResponse,
-				OutboundSubstreamObserver individualObserver
+				SubstreamObserver<ChainedRequest> individualObserver
 			) {
 				final var midProcessor = processor.newReentrantMidProcessor(nestedResponse);
 				DispatchingOnReadyHandler.copyWithFlowControl(

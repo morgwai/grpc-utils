@@ -24,10 +24,10 @@ import io.grpc.stub.*;
  * {@code maxConcurrentRequestMessages}&nbsp;/&nbsp;{@code maxConcurrentClientResponseMessages}
  * constructor param.
  * <p>
- * Each inbound message is assigned a separate dedicated {@link OutboundSubstreamObserver observer
+ * Each inbound message is assigned a separate dedicated {@link SubstreamObserver observer
  * of the substream of outbound messages} resulting from processing of this inbound message. Inbound
  * messages together with their dedicated results observers are passed as arguments to
- * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+ * {@link #onInboundMessage(Object, SubstreamObserver)
  * onInboundMessage(message, messageResultsDedicatedObserver)} method that must either be overridden
  * in a subclass or its handler must supplied on
  * {@code onServerRequestHandler}&nbsp;/&nbsp;{@code onClientResponseHandler} constructor param.</p>
@@ -52,8 +52,8 @@ import io.grpc.stub.*;
  * order needs to be preserved.</p>
  * <p>
  * If processing of one inbound message may produce multiple outbound messages,
- * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
- * onInboundMessage(...)} may pass its dedicated observer to utilities like
+ * {@link #onInboundMessage(Object, SubstreamObserver) onInboundMessage(...)} may pass its dedicated
+ * observer to utilities like
  * {@link StreamObservers#copyWithFlowControl(Iterator, CallStreamObserver)
  * StreamObservers.copyWithFlowControl(...)} in case of sequential processing or
  * {@link DispatchingOnReadyHandler#copyWithFlowControl(CallStreamObserver, Executor, Iterator[])
@@ -79,13 +79,16 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-	/** See {@link ConcurrentInboundObserver.OutboundSubstreamObserver} */
+	/**
+	 * Substream of an {@link CallStreamObserver outbound observer}.
+	 * See {@link ConcurrentInboundObserver.OutboundSubstreamObserver} for details.
+	 */
 	public static abstract class SubstreamObserver<MessageT> extends CallStreamObserver<MessageT> {
 
-		/** See {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)} */
+		/** Calls {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)}. */
 		public abstract void reportErrorAfterAllTasksComplete(Throwable errorToReport);
 
-		/** See {@link ConcurrentInboundObserver#newOutboundSubstream()} */
+		/** Calls {@link ConcurrentInboundObserver#newOutboundSubstream()}. */
 		public abstract SubstreamObserver<MessageT> newOutboundSubstream();
 	}
 
@@ -126,7 +129,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     of request messages processed concurrently. It should correspond to the server processing
 	 *     capabilities.
 	 * @param onRequestHandler stored on {@link #onInboundMessageHandler} to be called by
-	 *     {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)}.
+	 *     {@link #onInboundMessage(Object, SubstreamObserver)}.
 	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
 	 *
@@ -214,7 +217,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     of request messages processed concurrently. It should correspond to the server processing
 	 *     capabilities.
 	 * @param onServerRequestHandler stored on {@link #onInboundMessageHandler} to be called by
-	 *     {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)}.
+	 *     {@link #onInboundMessage(Object, SubstreamObserver)}.
 	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
 	 * @param serverResponseObserver server response observer of the given RPC method used for
@@ -313,7 +316,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 *     the maximum number of response messages processed concurrently. It should correspond to
 	 *     the client processing capabilities.
 	 * @param onClientResponseHandler stored on {@link #onInboundMessageHandler} to be called by
-	 *     {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)}.
+	 *     {@link #onInboundMessage(Object, SubstreamObserver)}.
 	 * @param onErrorHandler stored on {@link #onErrorHandler} to be called by
 	 *     {@link #onError(Throwable)}.
 	 * @param onBeforeStartHandler stored on {@link #onBeforeStartHandler} to be called by
@@ -348,8 +351,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * Creates a server method request observer and configures its flow-control.
 	 * Constructor for those who prefer to override methods rather than provide functional handlers
 	 * as params. At least
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)} must be overridden.
+	 * {@link #onInboundMessage(Object, SubstreamObserver) onInboundMessage(...)} must be
+	 * overridden.
 	 * @see #newConcurrentServerRequestObserver(ClientCallStreamObserver, int, BiConsumer,
 	 *     BiConsumer, ServerCallStreamObserver) newConcurrentServerRequestObserver(...) for
 	 *     descriptions of the params.
@@ -372,8 +375,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * Creates a client response observer and configures its flow-control.
 	 * Constructor for those who prefer to override methods rather than provide functional handlers
 	 * as params. At least
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)} must be overridden.
+	 * {@link #onInboundMessage(Object, SubstreamObserver) onInboundMessage(...)} must be
+	 * overridden.
 	 * @see #newConcurrentClientResponseObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
 	 *     Consumer) newConcurrentClientResponseObserver(...) for descriptions of the params
 	 */
@@ -395,13 +398,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	/**
 	 * Called by {@link #onNext(Object) onNext(message)}, processes {@code message}.
 	 * Resulting outbound messages must be passed to {@code messageResultsDedicatedObserver}
-	 * associated with this given {@code message} using
-	 * {@link OutboundSubstreamObserver#onNext(Object)
+	 * associated with this given {@code message} using {@link SubstreamObserver#onNext(Object)
 	 * messageResultsDedicatedObserver.onNext(resultOutboundMessage)}. Once the processing is done
-	 * and all the result outbound messages are submitted, either
-	 * {@link OutboundSubstreamObserver#onCompleted() messageResultsDedicatedObserver.onCompleted()}
-	 * or {@link OutboundSubstreamObserver#onError(Throwable)
-	 * messageResultsDedicatedObserver.onError(...)} must be called.
+	 * and all the resulting outbound messages are submitted, either
+	 * {@link SubstreamObserver#onCompleted() messageResultsDedicatedObserver.onCompleted()} or
+	 * {@link SubstreamObserver#onError(Throwable) messageResultsDedicatedObserver.onError(...)}
+	 * must be called.
 	 * <p>
 	 * {@code messageResultsDedicatedObserver} is thread-safe and implementations of this
 	 * method may freely dispatch work to several other threads.</p>
@@ -436,18 +438,18 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * <p>
 	 * The default implementation calls {@link #onInboundMessageHandler}.</p>
 	 *
-	 * @see OutboundSubstreamObserver
+	 * @see SubstreamObserver
 	 */
 	protected void onInboundMessage(
 		InboundT message,
-		OutboundSubstreamObserver messageResultsDedicatedObserver
+		SubstreamObserver<OutboundT> messageResultsDedicatedObserver
 	) {
 		onInboundMessageHandler.accept(message, messageResultsDedicatedObserver);
 	}
 
 	/**
 	 * Called by the default implementation of
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+	 * {@link #onInboundMessage(Object, SubstreamObserver)
 	 * onInboundMessage(...)}. Initialized via {@code onInboundMessageHandler} param of
 	 * {@link #newConcurrentServerRequestObserver(ClientCallStreamObserver, int, BiConsumer,
 	 * BiConsumer, ServerCallStreamObserver) newConcurrentServerRequestObserver(...)},
@@ -517,16 +519,15 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * {@link CallStreamObserver#onError(Throwable) outboundObserver.onError(errorToReport)}.
 	 * <p>
 	 * If after this method is called, any of the remaining outbound substream observers gets a call
-	 * to its {@link OutboundSubstreamObserver#onError(Throwable) onError(errror)}, then
+	 * to its {@link SubstreamObserver#onError(Throwable) onError(errror)}, then
 	 * {@code errorToReport} will be discarded.</p>
 	 * <p>
 	 * If this method is called from this observer's {@link #onError(Throwable)}, it should be
 	 * followed by {@link #onCompleted()} to manually mark inbound stream as completed
 	 * (half-close).<br/>
-	 * If it's called in
-	 * {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
-	 * onInboundMessage(...)}, it should be eventually followed by
-	 * {@link OutboundSubstreamObserver#onCompleted() dedicatedObserver.onCompleted()}.</p>
+	 * If it's called in {@link #onInboundMessage(Object, SubstreamObserver) onInboundMessage(...)},
+	 * it should be eventually followed by
+	 * {@link SubstreamObserver#onCompleted() dedicatedObserver.onCompleted()}.</p>
 	 */
 	public final void reportErrorAfterAllTasksComplete(Throwable errorToReport) {
 		synchronized (lock) {
@@ -537,23 +538,18 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Creates a new {@link OutboundSubstreamObserver outbound substream}. This method is
-	 * called each time a new inbound message arrives in {@link #onNext(Object)}.
+	 * Creates a new {@link SubstreamObserver outbound substream} not related to any inbound
+	 * message.
+	 * The parent {@code outboundObserver} will not be marked as completed until all substreams
+	 * (either created manually with this method or automatically for collecting results of inbound
+	 * messages processing) are {@link SubstreamObserver#onCompleted() completed}.
 	 * <p>
-	 * Applications may also create additional outbound substreams to send outbound messages not
-	 * related to any inbound message: the parent {@code outboundObserver} will not be marked as
-	 * completed until all substreams are completed.<br/>
-	 * After creating an additional substream and
-	 * {@link OutboundSubstreamObserver#setOnReadyHandler(Runnable) setting its onReadyHandler}, it
-	 * may be necessary to manually deliver the first {@link OutboundSubstreamObserver#onReady()
-	 * onReady() call}.</p>
-	 * <p>
-	 * Subclasses may override this method if they need to use specialized subclasses of
-	 * {@link OutboundSubstreamObserver OutboundSubstreamObserver}: see
-	 * {@link OrderedConcurrentInboundObserver#newOutboundSubstream()} for an example.</p>
+	 * After creating a substream with this method and
+	 * {@link SubstreamObserver#setOnReadyHandler(Runnable) setting its onReadyHandler}, it may be
+	 * necessary to manually run it the first time.</p>
 	 */
-	public OutboundSubstreamObserver newOutboundSubstream() {
-		return new OutboundSubstreamObserver();
+	public final SubstreamObserver<OutboundT> newOutboundSubstream() {
+		return newOutboundSubstream(false);
 	}
 
 
@@ -681,10 +677,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Calls {@link OutboundSubstreamObserver#onReady() dedicated onReadyHandlers} of the
-	 * {@link #activeOutboundSubstreams active substream observers}, then requests number of
-	 * inbound messages equal to {@link #idleCount} from {@link #inboundControlObserver} and resets
-	 * the counter to {@code 0}.
+	 * Calls {@link OutboundSubstreamObserver#onReady() onReadyHandlers} of the
+	 * {@link #activeOutboundSubstreams active substream observers} and
+	 * {@link CallStreamObserver#request(int) requests} a number of inbound messages need to achieve
+	 * concurrency level set with {@code maxConcurrentInboundMessages}
+	 * {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer, Consumer)
+	 * constructor} param.
 	 */
 	final void onReady() {
 		synchronized (lock) {
@@ -705,15 +703,14 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Calls {@link #onInboundMessage(Object, ConcurrentInboundObserver.OutboundSubstreamObserver)
+	 * Calls {@link #onInboundMessage(Object, SubstreamObserver)
 	 * onInboundMessage}({@code message}, {@link #newOutboundSubstream()}) and if the parent
 	 * {@code outboundObserver} is ready, then also {@link OutboundSubstreamObserver#onReady()
 	 * messageResultsDedicatedObserver.onReadyHandler}.
 	 */
 	@Override
 	public final void onNext(InboundT message) {
-		final var messageResultsDedicatedObserver = newOutboundSubstream();
-		messageResultsDedicatedObserver.requestNextAfterCompletion = true;
+		final var messageResultsDedicatedObserver = newOutboundSubstream(true);
 		onInboundMessage(message, messageResultsDedicatedObserver);
 		synchronized (lock) {
 			if ( !outboundObserver.isReady()) return;
@@ -746,12 +743,33 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * A thread-safe observer of a substream of the parent outbound stream. The parent
-	 * {@code outboundObserver} will be marked as completed automatically when and only if all its
-	 * substreams and the inbound stream are marked as completed.
-	 * @see #newOutboundSubstream()
+	 * Creates a new {@link OutboundSubstreamObserver outbound substream}.
+	 * This method is called automatically to create a new substream for each
+	 * {@link #onInboundMessage(Object, SubstreamObserver) inbound message} and may be called
+	 * manually by user code via {@link #newOutboundSubstream()} to create additional substreams.
+	 * <p>
+	 * Subclasses may override this method if they need to use specialized subclasses of
+	 * {@link OutboundSubstreamObserver OutboundSubstreamObserver}: see
+	 * {@link OrderedConcurrentInboundObserver#newOutboundSubstream(boolean)} for an example.</p>
+	 *
+	 * @param requestNextAfterCompletion passed to
+	 *     {@link OutboundSubstreamObserver#OutboundSubstreamObserver(boolean)}.
 	 */
-	public class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
+	protected OutboundSubstreamObserver newOutboundSubstream(boolean requestNextAfterCompletion) {
+		return new OutboundSubstreamObserver(requestNextAfterCompletion);
+	}
+
+
+
+	/**
+	 * A thread-safe observer of a substream of the parent outbound stream. The parent
+	 * {@code outboundObserver} will be marked as {@link CallStreamObserver#onCompleted() completed}
+	 * automatically when and only when all of its {@link StreamObserver#onCompleted() substreams}
+	 * and {@link #onCompleted() the inbound stream} are marked as completed.
+	 * @see #newOutboundSubstream()
+	 * @see #newOutboundSubstream(boolean)
+	 */
+	protected class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
 
 		/**
 		 * Parent observer's concurrency contract makes it unnecessary to synchronize setting or
@@ -760,16 +778,19 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		 */
 		volatile Runnable onReadyHandler;
 
+		final boolean requestNextAfterCompletion;
+
+
+
 		/**
-		 * Set to {@code true} at the beginning of {@link ConcurrentInboundObserver#onNext(Object)},
-		 * prevents requesting a next inbound message on completion of additional user created
-		 * substreams.
+		 * Constructs a new substream.
+		 * @param requestNextAfterCompletion if {@code true}, then upon
+		 *     {@link #onCompleted() completion} of this substream, a next inbound message will be
+		 *     {@link CallStreamObserver#request(int) requested} automatically. This should be set
+		 *     to {@code false} for additional user-created substreams.
 		 */
-		boolean requestNextAfterCompletion = false;
-
-
-
-		protected OutboundSubstreamObserver() {
+		protected OutboundSubstreamObserver(boolean requestNextAfterCompletion) {
+			this.requestNextAfterCompletion = requestNextAfterCompletion;
 			activeOutboundSubstreams.add(this);
 		}
 
@@ -852,7 +873,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 		/** Calls the handler set via {@link #setOnReadyHandler(Runnable)} if any. */
-		public void onReady() {
+		void onReady() {
 			// TODO: maybe lock onReadyHandler
 			if (onReadyHandler != null) onReadyHandler.run();
 		}

@@ -224,8 +224,10 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * additionally created substream is completed.</p>
 	 */
 	@Override
-	public OutboundSubstreamObserver newOutboundSubstream() {
-		return new BufferedOutboundSubstreamObserver(buffer.addBucket());
+	protected BufferedOutboundSubstreamObserver newOutboundSubstream(
+		boolean requestNextAfterCompletion
+	) {
+		return new BufferedOutboundSubstreamObserver(requestNextAfterCompletion);
 	}
 
 
@@ -235,14 +237,15 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * outbound observer, buffers them in its associated
 	 * {@link OrderedConcurrentOutputBuffer#addBucket()}.
 	 */
-	public class BufferedOutboundSubstreamObserver extends OutboundSubstreamObserver {
+	protected class BufferedOutboundSubstreamObserver extends OutboundSubstreamObserver {
 
 		final OutputStream<OutboundT> bucket;
 
 
 
-		protected BufferedOutboundSubstreamObserver(OutputStream<OutboundT> bucket) {
-			this.bucket = bucket;
+		protected BufferedOutboundSubstreamObserver(boolean requestNextAfterCompletion) {
+			super(requestNextAfterCompletion);
+			this.bucket = buffer.addBucket();
 		}
 
 
