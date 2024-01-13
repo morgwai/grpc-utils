@@ -651,7 +651,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Called in constructors in case of server method request observers and in
+	 * Called in {@link #ConcurrentInboundObserver(CallStreamObserver, int, BiConsumer, BiConsumer,
+	 * ServerCallStreamObserver) constructors} in case of server method request observers and in
 	 * {@link #beforeStart(ClientCallStreamObserver)} in case of client response observers.
 	 */
 	final void setInboundControlObserver(CallStreamObserver<?> inboundControlObserver) {
@@ -752,9 +753,11 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	public class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
 
-		// Listener's / parent observer's concurrency contract makes it unnecessary to synchronize
-		// setting or calling onReadyHandler, but calling and setting may still be performed by
-		// different threads (just not concurrently), hence volatile.
+		/**
+		 * Parent observer's concurrency contract makes it unnecessary to synchronize setting or
+		 * calling {@code onReadyHandler}, but calling and setting may still be performed by
+		 * different {@code Threads} (just not concurrently), hence {@code volatile}.
+		 */
 		volatile Runnable onReadyHandler;
 
 		/**
@@ -773,9 +776,10 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 		/**
-		 * Marks this substream as completed. If all outbound substreams are completed and the
-		 * inbound stream is closed, {@link CallStreamObserver#onCompleted() onCompleted()} from the
-		 * parent {@code outboundObserver} is called automatically.
+		 * Marks this substream as completed.
+		 * When all outbound substreams and the inbound stream are completed, the parent
+		 * {@code outboundObserver} will be
+		 * {@link CallStreamObserver#onCompleted() marked as completed} automatically.
 		 */
 		@Override
 		public void onCompleted() {
@@ -847,10 +851,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/**
-		 * Calls the handler registered via {@link #setOnReadyHandler(Runnable)} if it's not
-		 * {@code null}.
-		 */
+		/** Calls the handler set via {@link #setOnReadyHandler(Runnable)} if any. */
 		public void onReady() {
 			// TODO: maybe lock onReadyHandler
 			if (onReadyHandler != null) onReadyHandler.run();
@@ -858,7 +859,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/** Calls {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)} */
+		/** Calls {@link ConcurrentInboundObserver#reportErrorAfterAllTasksComplete(Throwable)}. */
 		@Override
 		public final void reportErrorAfterAllTasksComplete(Throwable errorToReport) {
 			ConcurrentInboundObserver.this.reportErrorAfterAllTasksComplete(errorToReport);
@@ -866,13 +867,15 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
-		/** Calls {@link ConcurrentInboundObserver#newOutboundSubstream()} */
+		/** Calls {@link ConcurrentInboundObserver#newOutboundSubstream()}. */
 		@Override
 		public SubstreamObserver<OutboundT> newOutboundSubstream() {
 			return ConcurrentInboundObserver.this.newOutboundSubstream();
 		}
 
 
+
+		// only unsupported operations and internal constants below
 
 		/** Throws {@link UnsupportedOperationException}. */
 		@Override public void disableAutoInboundFlowControl() {
