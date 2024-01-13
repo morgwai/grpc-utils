@@ -217,9 +217,7 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Constructs a new {@link OutboundBucketObserver substream observer} that instead of
-	 * writing messages directly to the parent {@code outboundObserver}, buffers them in its
-	 * associated bucket.
+	 * Constructs a new {@link BufferedOutboundSubstreamObserver}.
 	 * <p>
 	 * <b>NOTE:</b> Applications that create additional outbound substreams, should be very wary as
 	 * all buckets associated with subsequently received inbound messages will be buffered until the
@@ -227,22 +225,23 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 */
 	@Override
 	public OutboundSubstreamObserver newOutboundSubstream() {
-		return new OutboundBucketObserver(buffer.addBucket());
+		return new BufferedOutboundSubstreamObserver(buffer.addBucket());
 	}
 
 
 
 	/**
-	 * An {@link OutboundBucketObserver OutboundSubstreamObserver} that instead of writing messages
-	 * directly to the parent outbound observer, buffers them in its associated bucket.
+	 * An {@link OutboundSubstreamObserver} that instead of writing messages directly to the parent
+	 * outbound observer, buffers them in its associated
+	 * {@link OrderedConcurrentOutputBuffer#addBucket()}.
 	 */
-	public class OutboundBucketObserver extends OutboundSubstreamObserver {
+	public class BufferedOutboundSubstreamObserver extends OutboundSubstreamObserver {
 
 		final OutputStream<OutboundT> bucket;
 
 
 
-		protected OutboundBucketObserver(OutputStream<OutboundT> bucket) {
+		protected BufferedOutboundSubstreamObserver(OutputStream<OutboundT> bucket) {
 			this.bucket = bucket;
 		}
 
