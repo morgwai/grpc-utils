@@ -80,7 +80,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * Substream of an {@link CallStreamObserver outbound observer}.
+	 * Thread-safe substream of an {@link CallStreamObserver outbound observer}.
 	 * See {@link ConcurrentInboundObserver.OutboundSubstreamObserver} for details.
 	 */
 	public static abstract class SubstreamObserver<MessageT> extends CallStreamObserver<MessageT> {
@@ -544,9 +544,11 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	 * (either created manually with this method or automatically for collecting results of inbound
 	 * messages processing) are {@link SubstreamObserver#onCompleted() completed}.
 	 * <p>
-	 * After creating a substream with this method and
+	 * <b>NOTE:</b> after creating a substream with this method and
 	 * {@link SubstreamObserver#setOnReadyHandler(Runnable) setting its onReadyHandler}, it may be
-	 * necessary to manually run it the first time.</p>
+	 * necessary to manually run it the first time. Both setting the handler and its first manual
+	 * run, may <b>only</b> be performed on a gRPC {@code Thread} bound by the gRPC concurrency
+	 * contract to ensure consistency of {@code onReady()} calls to the set handler.</p>
 	 */
 	public final SubstreamObserver<OutboundT> newOutboundSubstream() {
 		return newOutboundSubstream(false);
@@ -762,22 +764,21 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 	/**
-	 * A thread-safe observer of a substream of the parent outbound stream. The parent
-	 * {@code outboundObserver} will be marked as {@link CallStreamObserver#onCompleted() completed}
-	 * automatically when and only when all of its {@link StreamObserver#onCompleted() substreams}
-	 * and {@link #onCompleted() the inbound stream} are marked as completed.
+	 * A thread-safe observer of a substream of the parent outbound stream.
+	 * The parent {@code outboundObserver} will be marked as
+	 * {@link CallStreamObserver#onCompleted() completed} automatically when and only when all of
+	 * its {@link StreamObserver#onCompleted() substreams} and
+	 * {@link #onCompleted() the inbound stream} are marked as completed.
+	 * <p>
+	 * <b>NOTE:</b> {@link OutboundSubstreamObserver#setOnReadyHandler(Runnable)} may only be called
+	 * on a gRPC {@code Thread} bound by the gRPC concurrency contract.</p>
+	 *
 	 * @see #newOutboundSubstream()
 	 * @see #newOutboundSubstream(boolean)
 	 */
 	protected class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
 
-		/**
-		 * Parent observer's concurrency contract makes it unnecessary to synchronize setting or
-		 * calling {@code onReadyHandler}, but calling and setting may still be performed by
-		 * different {@code Threads} (just not concurrently), hence {@code volatile}.
-		 */
-		volatile Runnable onReadyHandler;
-
+		Runnable onReadyHandler;
 		final boolean requestNextAfterCompletion;
 
 
@@ -865,6 +866,11 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+		/**
+		 * Sets {@code onReadyHandler} to be called when this observer becomes ready.
+		 * This method may only be called on a gRPC {@code Thread} bound by the gRPC concurrency
+		 * contract to ensure consistency of {@code onReady()} calls to {@code onReadyHandler}.
+		 */
 		@Override
 		public void setOnReadyHandler(Runnable onReadyHandler) {
 			this.onReadyHandler = onReadyHandler;

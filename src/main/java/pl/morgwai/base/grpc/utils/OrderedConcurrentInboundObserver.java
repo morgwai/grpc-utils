@@ -19,6 +19,11 @@ import pl.morgwai.base.utils.concurrent.OrderedConcurrentOutputBuffer.OutputStre
  * the output and the rest is buffered, passing too high
  * {@code maxConcurrentRequestMessages}&nbsp;/&nbsp;{@code maxConcurrentClientResponseMessages}
  * param may lead to "head of the line blocking" resulting in an excessive buffer growth.</p>
+ * <p>
+ * <b>NOTE:</b> {@link #newOutboundSubstream() adding substreams manually} will intrinsically
+ * disrupt the order of outbound messages. Moreover manually adding substreams may <b>only</b> be
+ * performed on gRPC {@code Threads} bound by the gRPC concurrency contract: see
+ * {@link #newOutboundSubstream(boolean)} for details.</p>
  */
 public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		extends ConcurrentInboundObserver<InboundT, OutboundT, ControlT> {
@@ -218,10 +223,13 @@ public class OrderedConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 	/**
 	 * Constructs a new {@link BufferedOutboundSubstreamObserver}.
+	 * This method and as a result also {@link #newOutboundSubstream()} may <b>only</b> be called
+	 * on gRPC {@code Threads} bound by the gRPC concurrency contract, so that it is ensured that
+	 * buckets are never {@link OrderedConcurrentOutputBuffer#addBucket() added} concurrently.
 	 * <p>
 	 * <b>NOTE:</b> Applications that create additional outbound substreams, should be very wary as
 	 * all buckets associated with subsequently received inbound messages will be buffered until the
-	 * additionally created substream is completed.</p>
+	 * manually created substream is completed.</p>
 	 */
 	@Override
 	protected BufferedOutboundSubstreamObserver newOutboundSubstream(
