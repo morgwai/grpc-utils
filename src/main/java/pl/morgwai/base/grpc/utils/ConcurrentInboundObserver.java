@@ -714,6 +714,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	public final void onNext(InboundT message) {
 		final var messageResultsDedicatedObserver = newOutboundSubstream(true);
 		onInboundMessage(message, messageResultsDedicatedObserver);
+		messageResultsDedicatedObserver.lockOnReadyHandler();
 		synchronized (lock) {
 			if ( !outboundObserver.isReady()) return;
 		}
@@ -779,6 +780,8 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 	protected class OutboundSubstreamObserver extends SubstreamObserver<OutboundT> {
 
 		Runnable onReadyHandler;
+		boolean onReadyHandlerLocked = false;
+
 		final boolean requestNextAfterCompletion;
 
 
@@ -866,6 +869,12 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 
 
+		void lockOnReadyHandler() {
+			onReadyHandlerLocked = true;
+		}
+
+
+
 		/**
 		 * Sets {@code onReadyHandler} to be called when this observer becomes ready.
 		 * This method may only be called on a gRPC {@code Thread} bound by the gRPC concurrency
@@ -873,6 +882,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 		 */
 		@Override
 		public void setOnReadyHandler(Runnable onReadyHandler) {
+			if (onReadyHandlerLocked) throw new IllegalStateException("onReadyHandler locked");
 			this.onReadyHandler = onReadyHandler;
 		}
 
@@ -880,7 +890,7 @@ public class ConcurrentInboundObserver<InboundT, OutboundT, ControlT>
 
 		/** Calls the handler set via {@link #setOnReadyHandler(Runnable)} if any. */
 		void onReady() {
-			// TODO: maybe lock onReadyHandler
+			onReadyHandlerLocked = true;
 			if (onReadyHandler != null) onReadyHandler.run();
 		}
 
