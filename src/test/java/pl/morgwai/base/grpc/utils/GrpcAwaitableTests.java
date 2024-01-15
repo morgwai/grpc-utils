@@ -4,7 +4,11 @@ package pl.morgwai.base.grpc.utils;
 import java.util.concurrent.*;
 
 import io.grpc.*;
+import org.junit.Before;
 import org.junit.Test;
+import pl.morgwai.base.utils.concurrent.TaskTrackingThreadPoolExecutor;
+
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -18,114 +22,106 @@ public class GrpcAwaitableTests {
 
 
 
-	@Test
-	public void testAwaitableOfServerTermination() throws InterruptedException {
-		final var executor = new ThreadPoolExecutor(
-				2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingDeque<>());
-		final var server = new ExecutorServer(executor);
-		final var latch = new CountDownLatch(1);
+	final ExecutorService executor = new TaskTrackingThreadPoolExecutor(2);
+	final ExecutorServer server = new ExecutorServer(executor);
+	final ExecutorChannel channel = new ExecutorChannel(executor);
+	final CountDownLatch taskBlockingLatch = new CountDownLatch(1);
+
+
+
+	@Before
+	public void blockExecutor() {
 		executor.execute(
 			() -> {
 				try {
-					latch.await();
+					taskBlockingLatch.await();
 				} catch (InterruptedException ignored) {}
 			}
 		);
+	}
+
+
+
+	@Test
+	public void testAwaitableOfServerTermination() throws InterruptedException {
 		final var termination = GrpcAwaitable.ofTermination(server);
 		assertFalse("server should not be shutdown until termination is being awaited",
 				server.isShutdown());
-		assertFalse("termination should fail before latch is lowered", termination.await(20L));
-		assertTrue("server should be shutdown", server.isShutdown());
-		assertFalse("termination should fail before latch is lowered", server.isTerminated());
-		latch.countDown();
-		assertTrue("termination should succeed after latch is lowered", termination.await(20L));
-		assertTrue("termination should succeed after latch is lowered", server.isTerminated());
+
+		assertFalse("termination should fail before taskBlockingLatch is lowered",
+				termination.await(20L));
+		assertTrue("server should be shutdown",
+				server.isShutdown());
+		assertFalse("termination should fail before taskBlockingLatch is lowered",
+				server.isTerminated());
+
+		taskBlockingLatch.countDown();
+		assertTrue("termination should succeed after taskBlockingLatch is lowered",
+				termination.await(20L));
+		assertTrue("termination should succeed after taskBlockingLatch is lowered",
+				server.isTerminated());
 	}
 
 
 
 	@Test
 	public void testAwaitableOfServerEnforcedTermination() throws InterruptedException {
-		final var executor = new ThreadPoolExecutor(
-				2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingDeque<>());
-		final var server = new ExecutorServer(executor);
-		final var latch = new CountDownLatch(1);
-		executor.execute(
-			() -> {
-				try {
-					Thread.sleep(100_000L);
-				} catch (InterruptedException e) {
-					try {
-						latch.await();
-					} catch (InterruptedException ignored) {}
-				}
-			}
-		);
 		final var enforcedTermination = GrpcAwaitable.ofEnforcedTermination(server);
 		assertFalse("server should not be shutdown until termination is being awaited",
 				server.isShutdown());
-		assertFalse("termination should fail", enforcedTermination.await(20L));
-		assertFalse("termination should fail", server.isTerminated());
-		assertTrue("server should be shutdown", server.isShutdown());
-		latch.countDown();
+
+		assertFalse("termination should fail",
+				enforcedTermination.await(20L));
+		assertFalse("termination should fail",
+				server.isTerminated());
+		assertTrue("server should be shutdown",
+				server.isShutdown());
+
+		taskBlockingLatch.countDown();
 		assertTrue("finally server should terminate successfully",
-				server.awaitTermination(50L, TimeUnit.MILLISECONDS));
+				server.awaitTermination(50L, MILLISECONDS));
 	}
 
 
 
 	@Test
 	public void testAwaitableOfChannelTermination() throws InterruptedException {
-		final var executor = new ThreadPoolExecutor(
-				2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingDeque<>());
-		final var channel = new ExecutorChannel(executor);
-		final var latch = new CountDownLatch(1);
-		executor.execute(
-			() -> {
-				try {
-					latch.await();
-				} catch (InterruptedException ignored) {}
-			}
-		);
 		final var termination = GrpcAwaitable.ofTermination(channel);
 		assertFalse("channel should not be shutdown until termination is being awaited",
 				channel.isShutdown());
-		assertFalse("termination should fail before latch is lowered", termination.await(20L));
-		assertTrue("channel should be shutdown", channel.isShutdown());
-		assertFalse("termination should fail before latch is lowered", channel.isTerminated());
-		latch.countDown();
-		assertTrue("termination should succeed after latch is lowered", termination.await(20L));
-		assertTrue("termination should succeed after latch is lowered", channel.isTerminated());
+
+		assertFalse("termination should fail before taskBlockingLatch is lowered",
+				termination.await(20L));
+		assertTrue("channel should be shutdown",
+				channel.isShutdown());
+		assertFalse("termination should fail before taskBlockingLatch is lowered",
+				channel.isTerminated());
+
+		taskBlockingLatch.countDown();
+		assertTrue("termination should succeed after taskBlockingLatch is lowered",
+				termination.await(20L));
+		assertTrue("termination should succeed after taskBlockingLatch is lowered",
+				channel.isTerminated());
 	}
 
 
 
 	@Test
 	public void testAwaitableOfChannelEnforcedTermination() throws InterruptedException {
-		final var executor = new ThreadPoolExecutor(
-				2, 2, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingDeque<>());
-		final var channel = new ExecutorChannel(executor);
-		final var latch = new CountDownLatch(1);
-		executor.execute(
-			() -> {
-				try {
-					Thread.sleep(100_000L);
-				} catch (InterruptedException e) {
-					try {
-						latch.await();
-					} catch (InterruptedException ignored) {}
-				}
-			}
-		);
 		final var enforcedTermination = GrpcAwaitable.ofEnforcedTermination(channel);
 		assertFalse("channel should not be shutdown until termination is being awaited",
 				channel.isShutdown());
-		assertFalse("termination should fail", enforcedTermination.await(20L));
-		assertFalse("termination should fail", channel.isTerminated());
-		assertTrue("channel should be shutdown", channel.isShutdown());
-		latch.countDown();
+
+		assertFalse("termination should fail",
+				enforcedTermination.await(20L));
+		assertFalse("termination should fail",
+				channel.isTerminated());
+		assertTrue("channel should be shutdown",
+				channel.isShutdown());
+
+		taskBlockingLatch.countDown();
 		assertTrue("finally channel should terminate successfully",
-				channel.awaitTermination(50L, TimeUnit.MILLISECONDS));
+				channel.awaitTermination(50L, MILLISECONDS));
 	}
 
 
@@ -196,12 +192,13 @@ public class GrpcAwaitableTests {
 		}
 
 		@Override public <InT, OutT> ClientCall<InT, OutT> newCall(
-				MethodDescriptor<InT, OutT> methodDescriptor, CallOptions callOptions) {
-			throw new UnsupportedOperationException("Not implemented");
+			MethodDescriptor<InT, OutT> methodDescriptor, CallOptions callOptions
+		) {
+			throw new UnsupportedOperationException();
 		}
 
 		@Override public String authority() {
-			throw new UnsupportedOperationException("Not implemented");
+			throw new UnsupportedOperationException();
 		}
 	}
 }

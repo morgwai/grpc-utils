@@ -4,7 +4,6 @@ package pl.morgwai.base.grpc.utils;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -18,6 +17,7 @@ import pl.morgwai.base.grpc.utils.ConcurrentInboundObserver.SubstreamObserver;
 import pl.morgwai.base.grpc.utils.FakeOutboundObserver.LoggingExecutor;
 import pl.morgwai.base.utils.concurrent.Awaitable;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.logging.Level.FINEST;
 import static java.util.logging.Level.WARNING;
 
@@ -38,19 +38,6 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 
-	FakeOutboundObserver<InboundMessage, OutboundMessage> fakeOutboundObserver;
-	LoggingExecutor grpcInternalExecutor;
-	Throwable asyncError;
-
-	@Before
-	public void setup() {
-		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 10);
-		fakeOutboundObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
-		asyncError = null;
-	}
-
-
-
 	/** Creates test subject. */
 	protected abstract ConcurrentInboundObserver<InboundMessage, OutboundMessage, ?>
 	newConcurrentInboundObserver(
@@ -60,9 +47,26 @@ public abstract class ConcurrentInboundObserverTests {
 				InboundMessage, OutboundMessage, ?>> onErrorHandler
 	);
 
+
+
 	/** See {@link #startMessageDelivery(ConcurrentInboundObserver, InboundMessageProducer)}. */
 	protected boolean isClientResponseObserverTest() {
 		return false;
+	}
+
+
+
+	FakeOutboundObserver<InboundMessage, OutboundMessage> fakeOutboundObserver;
+	LoggingExecutor grpcInternalExecutor;
+	Throwable asyncError;
+
+
+
+	@Before
+	public void setup() {
+		grpcInternalExecutor = new LoggingExecutor("grpcInternalExecutor", 10);
+		fakeOutboundObserver = new FakeOutboundObserver<>(grpcInternalExecutor);
+		asyncError = null;
 	}
 
 
@@ -333,7 +337,7 @@ public abstract class ConcurrentInboundObserverTests {
 		startMessageDelivery(testSubject, new InboundMessageProducer(1));
 		Awaitable.awaitMultiple(
 			TIMEOUT_MILLIS,
-			(timeoutMillis) -> latch.await(timeoutMillis, TimeUnit.MILLISECONDS),
+			(timeoutMillis) -> latch.await(timeoutMillis, MILLISECONDS),
 			fakeOutboundObserver::awaitFinalization,
 			(timeoutMillis) -> {
 				grpcInternalExecutor.shutdown();
@@ -342,7 +346,8 @@ public abstract class ConcurrentInboundObserverTests {
 			grpcInternalExecutor::awaitTermination
 		);
 
-		assertTrue("IllegalStateException should be thrown", exceptionThrownHolder[0]);
+		assertTrue("IllegalStateException should be thrown",
+				exceptionThrownHolder[0]);
 		performStandardVerifications(fakeOutboundObserver);
 	}
 
@@ -816,32 +821,28 @@ public abstract class ConcurrentInboundObserverTests {
 
 
 	static class InboundMessage {
-
 		final int id;
-
 		public InboundMessage(int id) {
 			this.id = id;
 		}
-
-		@Override
-		public String toString() {
+		@Override public String toString() {
 			return "inbound-" + id;
 		}
 	}
 
+
+
 	static class OutboundMessage {
-
 		final int inboundId;
-
 		public OutboundMessage(int inboundId) {
 			this.inboundId = inboundId;
 		}
-
-		@Override
-		public String toString() {
+		@Override public String toString() {
 			return "outbound-" + inboundId;
 		}
 	}
+
+
 
 	static final Comparator<OutboundMessage> outboundMessageComparator =
 			Comparator.comparingInt(msg -> msg.inboundId);

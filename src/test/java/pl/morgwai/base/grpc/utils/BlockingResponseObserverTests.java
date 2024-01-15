@@ -53,10 +53,12 @@ public class BlockingResponseObserverTests {
 			}
 			responseObserver.onCompleted();
 		});
+
 		worker.start();
 		responseObserver.awaitCompletion(50L);
 		worker.join(10L);
-		assertTrue("response should be marked as completed", responseObserver.isCompleted());
+		assertTrue("response should be marked as completed",
+				responseObserver.isCompleted());
 		assertEquals("all input messages should be received",
 				inputData.length, receivedData.size());
 		for (int i = 0; i < inputData.length; i++) {
@@ -77,17 +79,20 @@ public class BlockingResponseObserverTests {
 
 			responseObserver.onError(reportedError);
 		});
+
 		worker.start();
 		try {
 			responseObserver.awaitCompletion(50L);
 			fail("ErrorReportedException should be thrown");
 		} catch (ErrorReportedException e) {
-			assertSame("reported error should be caught", reportedError, e.getCause());
+			assertSame("reported error should be caught",
+					reportedError, e.getCause());
 			assertSame("reported error should be available via getError()",
 					reportedError, responseObserver.getError().get());
 		}
 		worker.join(10L);
-		assertTrue("response should be marked as completed", responseObserver.isCompleted());
+		assertTrue("response should be marked as completed",
+				responseObserver.isCompleted());
 	}
 
 
@@ -101,7 +106,8 @@ public class BlockingResponseObserverTests {
 				responseObserver.toAwaitable().await(timeoutMillis));
 		assertTrue("at least " + timeoutMillis + "ms should pass",
 				System.currentTimeMillis() - startMillis >= timeoutMillis);
-		assertFalse("response should not be marked as completed", responseObserver.isCompleted());
+		assertFalse("response should not be marked as completed",
+				responseObserver.isCompleted());
 	}
 
 
@@ -111,7 +117,8 @@ public class BlockingResponseObserverTests {
 		responseObserver.onCompleted();
 
 		responseObserver.awaitCompletion(1L);
-		assertTrue("response should be marked as completed", responseObserver.isCompleted());
+		assertTrue("response should be marked as completed",
+				responseObserver.isCompleted());
 	}
 
 
@@ -138,11 +145,8 @@ public class BlockingResponseObserverTests {
 
 
 	static class ResponseMessage {
-
 		final int id;
-
 		public ResponseMessage(int id) { this.id = id; }
-
 		@Override public String toString() { return "msg-" + id; }
 	}
 

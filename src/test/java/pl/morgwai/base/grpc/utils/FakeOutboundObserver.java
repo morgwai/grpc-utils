@@ -22,10 +22,7 @@ import static org.junit.Assert.*;
 
 /**
  * A fake {@link CallStreamObserver} testing helper class.
- * Helps to emulate behavior of an inbound and the gRPC system.
- * <p>
- * <b>Note:</b> in most cases it is better to use {@link io.grpc.inprocess.InProcessChannelBuilder}
- * for testing gRPC methods. This class is mainly intended for testing infrastructure parts.</p>
+ * Helps to emulate behavior of an inbound and the gRPC system. ejona86 hates me.
  */
 public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamObserver<OutboundT> {
 
@@ -54,9 +51,7 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
-	/**
-	 * For low level testing of onReady and onCancel handlers.
-	 */
+	/** For low level testing of onReady and onCancel handlers. */
 	public void runWithinListenerLock(Runnable handler) {
 		synchronized (listenerLock) {
 			handler.run();
@@ -444,9 +439,7 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 
 
 
-	/**
-	 * Simulates canceling the call by the client side.
-	 */
+	/** Simulates canceling the call by the client side. */
 	public void simulateCancel() {
 		cancelled = true;
 		synchronized (listenerLock) {
@@ -740,15 +733,11 @@ public class FakeOutboundObserver<InboundT, OutboundT> extends ServerCallStreamO
 	/** Logs task scheduling and executions, scheduling rejections and uncaught exceptions. */
 	public static class LoggingExecutor extends TaskTrackingThreadPoolExecutor {
 
-		/**
-		 * List of all rejected tasks.
-		 */
+		/** List of all rejected tasks. */
 		public List<Runnable> getRejectedTasks() { return rejectedTasks; }
 		final List<Runnable> rejectedTasks = new LinkedList<>();
 
-		/**
-		 * Uncaught exceptions mapped to tasks that threw them.
-		 */
+		/** Uncaught exceptions mapped to tasks that threw them. */
 		public Map<Throwable, Runnable> getUncaughtTaskExceptions() {return uncaughtTaskExceptions;}
 		final Map<Throwable, Runnable> uncaughtTaskExceptions = new HashMap<>();
 

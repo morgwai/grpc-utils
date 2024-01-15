@@ -434,11 +434,14 @@ public class DispatchingOnReadyHandlerTests {
 			userExecutor::awaitTermination
 		);
 
-		assertEquals("correct number of messages should be written",
-				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
-				fakeOutboundObserver.getOutputData().size());
+		assertEquals(
+			"correct number of messages should be written",
+			messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
+			fakeOutboundObserver.getOutputData().size()
+		);
 		userExecutor.verify();
-		assertNull("no error should be reported", fakeOutboundObserver.getReportedError());
+		assertNull("no error should be reported",
+				fakeOutboundObserver.getReportedError());
 		performStandardVerifications();
 	}
 
@@ -495,9 +498,11 @@ public class DispatchingOnReadyHandlerTests {
 			userExecutor::awaitTermination
 		);
 
-		assertEquals("correct number of messages should be written",
-				messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
-				fakeOutboundObserver.getOutputData().size());
+		assertEquals(
+			"correct number of messages should be written",
+			messagesPerTasks * (numberOfTasks - 1) + messageNumberToThrowAfter,
+			fakeOutboundObserver.getOutputData().size()
+		);
 		userExecutor.verify();
 		assertSame("exceptionToReport should be passed to onError",
 				exceptionToReport, fakeOutboundObserver.getReportedError());
