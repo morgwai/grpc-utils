@@ -1,6 +1,7 @@
 # gRPC utils
 
 Some helpful classes when developing gRPC services.<br/>
+Copyright 2021 Piotr Morgwai Kotarbinski, Licensed under the Apache License, Version 2.0<br/>
 <br/>
 **latest release: [7.0](https://search.maven.org/artifact/pl.morgwai.base/grpc-utils/7.0/jar)**
 ([javadoc](https://javadoc.io/doc/pl.morgwai.base/grpc-utils/7.0))
